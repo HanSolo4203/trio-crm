@@ -1,13 +1,13 @@
-import { Contacts } from "@/components/Contacts";
+import { ContactDetail } from "@/components/ContactDetail";
 import { Sidebar } from "@/components/Sidebar";
 
-export default function Home() {
+export default function ContactPage({ params }: { params: { id: string } }) {
   return (
     <>
       <Sidebar />
       <div className="min-h-screen pl-[234px]">
         <main className="mx-auto max-w-[1600px] px-10 py-8">
-          <Contacts />
+          <ContactDetail contactId={params.id} />
         </main>
       </div>
     </>
