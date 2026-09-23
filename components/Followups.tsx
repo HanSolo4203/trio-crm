@@ -17,13 +17,13 @@ type FollowupRow = {
 };
 
 const controlClass =
-  "mt-1.5 block w-full min-w-52 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2";
+  "input mt-1.5 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:min-w-52";
 
 const primaryButtonClass =
-  "rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60";
+  "btn inline-flex items-center justify-center rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButtonClass =
-  "inline-flex rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page";
+  "btn-compact inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page";
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message
@@ -81,7 +81,7 @@ function ClientCell({ contact }: { contact: Contact }) {
   return (
     <Link
       href={`/contacts/${contact.id}`}
-      className="block min-w-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+      className="block min-h-11 min-w-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
     >
       <p className="font-semibold text-navy">{contact.name}</p>
       <p className="mt-0.5 text-sm text-muted">{clientSubline(contact)}</p>
@@ -111,6 +111,68 @@ function ActionCell({ row }: { row: FollowupRow }) {
   );
 }
 
+function FollowupCard({
+  row,
+  mode,
+  completingId,
+  onComplete,
+}: {
+  row: FollowupRow;
+  mode: "pending" | "completed";
+  completingId: string | null;
+  onComplete?: (row: FollowupRow) => void;
+}) {
+  const status = followupStatus(row.task.date);
+  const overdue = mode === "pending" && status === "Overdue";
+  const completedAt = formatTimestamp(row.task.done_at);
+  const chat = row.chat;
+  const chatDate = chat ? chatDateLabel(chat) : "";
+  const action = row.task.text.trim() || "Follow-up";
+
+  return (
+    <article className="rounded-xl border border-line bg-white p-4">
+      <p className={`text-sm font-semibold ${overdue ? "text-danger" : "text-ink"}`}>
+        {dueLabel(row.task.date)}
+      </p>
+      <Link
+        href={`/contacts/${row.contact.id}`}
+        className="mt-2 block min-h-11 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+      >
+        <span className="font-semibold text-navy">{row.contact.name}</span>
+        <span className="mt-0.5 block text-sm text-muted">{clientSubline(row.contact)}</span>
+      </Link>
+      <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{action}</p>
+      {chat ? (
+        <Link
+          href={`/contacts/${row.contact.id}#history-${chat.id}`}
+          className={`${secondaryButtonClass} mt-3 w-full`}
+        >
+          {chatDate ? `Open chat · ${chatDate}` : "Open chat"}
+        </Link>
+      ) : (
+        <p className="mt-2 text-xs text-muted">Contact follow-up</p>
+      )}
+      <p className={`mt-3 text-sm font-semibold ${overdue ? "text-danger" : "text-ink"}`}>
+        {mode === "pending" ? status : completedAt || "Completed"}
+      </p>
+      {mode === "pending" ? (
+        <button
+          type="button"
+          onClick={() => onComplete?.(row)}
+          disabled={completingId !== null}
+          className={`${primaryButtonClass} mt-3 w-full`}
+        >
+          {completingId === row.task.id ? "Saving…" : "Done"}
+        </button>
+      ) : (
+        <Link href={`/contacts/${row.contact.id}`} className={`${secondaryButtonClass} mt-3 w-full`}>
+          View
+        </Link>
+      )}
+    </article>
+  );
+}
+
 function FollowupTable({
   rows,
   mode,
@@ -123,7 +185,20 @@ function FollowupTable({
   onComplete?: (row: FollowupRow) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <>
+      <ul className="flex flex-col gap-3 md:hidden">
+        {rows.map((row) => (
+          <li key={row.task.id}>
+            <FollowupCard
+              row={row}
+              mode={mode}
+              completingId={completingId}
+              onComplete={onComplete}
+            />
+          </li>
+        ))}
+      </ul>
+      <div className="hidden min-w-0 max-w-full overflow-x-auto md:block">
       <table className="w-full min-w-[760px] text-left text-sm">
         <caption className="sr-only">
           {mode === "pending" ? "Pending follow-ups" : "Completed follow-ups"}
@@ -194,7 +269,8 @@ function FollowupTable({
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -298,12 +374,12 @@ export function Followups() {
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end md:justify-between">
         <div>
           <p className="text-sm font-medium text-blue">Trio CRM</p>
           <h1 className="mt-2 text-3xl font-semibold text-navy">Follow-ups</h1>
         </div>
-        <div>
+        <div className="w-full md:w-auto">
           <label htmlFor={filterId} className="text-sm font-medium text-ink">
             Business
           </label>
@@ -331,7 +407,7 @@ export function Followups() {
           <button
             type="button"
             onClick={() => setLoadKey((value) => value + 1)}
-            className="mt-4 rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
+            className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
           >
             Try again
           </button>
@@ -348,7 +424,7 @@ export function Followups() {
               <button
                 type="button"
                 onClick={() => setLoadKey((value) => value + 1)}
-                className="mt-4 rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
+                className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
               >
                 Try again
               </button>
@@ -369,7 +445,7 @@ export function Followups() {
               </Link>
             </section>
           ) : (
-            <section className="mt-8 overflow-hidden rounded-2xl border border-line bg-white">
+            <section className="mt-8 md:overflow-hidden md:rounded-2xl md:border md:border-line md:bg-white">
               <FollowupTable
                 rows={pending}
                 mode="pending"
@@ -382,7 +458,7 @@ export function Followups() {
           )}
 
           <details className="mt-8 rounded-2xl border border-line bg-white">
-            <summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-navy">
+            <summary className="min-h-11 cursor-pointer px-4 py-4 text-sm font-semibold text-navy">
               Completed follow-up log ({completed.length})
             </summary>
             {completed.length === 0 ? (
@@ -390,7 +466,7 @@ export function Followups() {
                 No completed follow-ups.
               </p>
             ) : (
-              <div className="border-t border-line">
+              <div className="border-t border-line p-3 md:p-0">
                 <FollowupTable rows={completed} mode="completed" completingId={null} />
               </div>
             )}

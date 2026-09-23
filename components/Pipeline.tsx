@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import {
   BUSINESSES,
@@ -18,7 +18,7 @@ import type { Business, Contact } from "@/lib/types";
 type BusinessFilter = "all" | Business;
 
 const controlClass =
-  "mt-1.5 block w-full min-w-52 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2";
+  "input mt-1.5 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:min-w-52";
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message
@@ -51,6 +51,76 @@ function compareLeads(a: Contact, b: Contact) {
   return a.name.localeCompare(b.name);
 }
 
+function LaneBoard({ children }: { children: ReactNode }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(0);
+
+  function activeIndex() {
+    const el = scrollerRef.current;
+    if (!el) return 0;
+    const viewCenter = el.getBoundingClientRect().left + el.clientWidth / 2;
+    let best = 0;
+    let bestDist = Number.POSITIVE_INFINITY;
+    Array.from(el.children).forEach((lane, index) => {
+      if (!(lane instanceof HTMLElement)) return;
+      const rect = lane.getBoundingClientRect();
+      const dist = Math.abs(rect.left + rect.width / 2 - viewCenter);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = index;
+      }
+    });
+    return best;
+  }
+
+  function scrollToLane(index: number) {
+    const el = scrollerRef.current;
+    const lane = el?.children[index];
+    if (!el || !(lane instanceof HTMLElement)) return;
+    const laneRect = lane.getBoundingClientRect();
+    const scrollerRect = el.getBoundingClientRect();
+    el.scrollTo({
+      left:
+        el.scrollLeft +
+        (laneRect.left - scrollerRect.left) -
+        (el.clientWidth - lane.clientWidth) / 2,
+      behavior: "smooth",
+    });
+  }
+
+  return (
+    <div className="mt-8 min-w-0">
+      <div
+        ref={scrollerRef}
+        onScroll={() => {
+          const next = activeIndex();
+          setActive((current) => (current === next ? current : next));
+        }}
+        className="flex w-full min-w-0 snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-2 md:grid md:snap-none md:grid-cols-2 md:overflow-visible md:pb-0 lg:grid-cols-4"
+      >
+        {children}
+      </div>
+      <div className="mt-1 flex justify-center md:hidden" role="group" aria-label="Lead categories">
+        {HEATS.map((item, index) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-label={item.name}
+            aria-current={index === active ? "true" : undefined}
+            onClick={() => scrollToLane(index)}
+            className="flex h-11 w-11 items-center justify-center"
+          >
+            <span
+              aria-hidden="true"
+              className={`h-2 w-2 rounded-full ${index === active ? "bg-navy" : "bg-navy/25"}`}
+            />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function LeadCard({ contact }: { contact: Contact }) {
   const brand = business(contact.business);
   const stageStyle = stage(contact.stage);
@@ -60,7 +130,7 @@ function LeadCard({ contact }: { contact: Contact }) {
   return (
     <Link
       href={`/contacts/${contact.id}`}
-      className="block rounded-xl border border-line bg-white p-3 transition-colors hover:border-navy/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+      className="block min-h-11 rounded-xl border border-line bg-white p-3 transition-colors hover:border-navy/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
     >
       <p className="font-semibold text-navy">{contact.name}</p>
       {place ? <p className="mt-1 text-sm text-muted">{place}</p> : null}
@@ -133,12 +203,12 @@ export function Pipeline() {
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end md:justify-between">
         <div>
           <p className="text-sm font-medium text-blue">Trio CRM</p>
           <h1 className="mt-2 text-3xl font-semibold text-navy">Leads</h1>
         </div>
-        <div>
+        <div className="w-full md:w-auto">
           <label htmlFor={filterId} className="text-sm font-medium text-ink">
             Business
           </label>
@@ -166,7 +236,7 @@ export function Pipeline() {
           <button
             type="button"
             onClick={() => setLoadKey((value) => value + 1)}
-            className="mt-4 rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
+            className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
           >
             Try again
           </button>
@@ -174,7 +244,7 @@ export function Pipeline() {
       ) : loading ? (
         <p className="mt-8 text-sm text-muted">Loading leads…</p>
       ) : (
-        <div className="mt-8 grid grid-cols-1 items-start gap-4 xl:grid-cols-4">
+        <LaneBoard>
           {HEATS.map((item) => {
             const leads = openContacts
               .filter((contact) => contact.heat === item.id)
@@ -183,7 +253,7 @@ export function Pipeline() {
             return (
               <section
                 key={item.id}
-                className="rounded-2xl p-3"
+                className="min-w-[85vw] max-w-[85vw] shrink-0 snap-center rounded-2xl p-3 md:min-w-0 md:max-w-none md:shrink md:snap-align-none"
                 style={{ backgroundColor: item.bg }}
               >
                 <div className="flex items-center justify-between gap-3 px-1" style={{ color: item.ink }}>
@@ -202,7 +272,7 @@ export function Pipeline() {
               </section>
             );
           })}
-        </div>
+        </LaneBoard>
       )}
     </>
   );

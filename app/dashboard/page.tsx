@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -14,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { Sidebar } from "@/components/Sidebar";
+import { AppShell } from "@/components/AppShell";
 import { BUSINESSES, HEATS, isOpenStage, localDate, stage } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import type { Business, Contact, HistoryEntry, Stage, Task } from "@/lib/types";
@@ -63,10 +63,21 @@ const MONTH_LABELS = [
 ] as const;
 
 const controlClass =
-  "mt-1.5 block w-full min-w-52 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2";
+  "input mt-1.5 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:min-w-52";
 
-const axisTick = { fill: "#56677f", fontSize: 12 };
-const categoryTick = { fill: "#192841", fontSize: 12 };
+function subscribePhone(onChange: () => void) {
+  const media = window.matchMedia("(max-width: 767px)");
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+function phoneSnapshot() {
+  return window.matchMedia("(max-width: 767px)").matches;
+}
+
+function usePhone() {
+  return useSyncExternalStore(subscribePhone, phoneSnapshot, () => false);
+}
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message
@@ -160,7 +171,7 @@ function StatTile({
   valueClassName?: string;
 }) {
   return (
-    <div className="rounded-xl border border-line bg-white p-5">
+    <div className="min-w-0 rounded-xl border border-line bg-white p-5">
       <p className="text-sm text-muted">{label}</p>
       <p className={`mt-2 text-3xl font-semibold tabular-nums ${valueClassName ?? ""}`}>{value}</p>
     </div>
@@ -169,9 +180,9 @@ function StatTile({
 
 function ChartCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="min-w-0 rounded-xl border border-line bg-white p-5">
+    <section className="min-w-0 rounded-xl border border-line bg-white p-4 md:p-5">
       <h2 className="text-base font-semibold text-navy">{title}</h2>
-      <div className="mt-4 h-72">{children}</div>
+      <div className="mt-4 h-[220px] md:h-72">{children}</div>
     </section>
   );
 }
@@ -179,12 +190,20 @@ function ChartCard({ title, children }: { title: string; children: ReactNode }) 
 function HorizontalBars({
   data,
   yWidth,
+  mobileYWidth,
   chartKey,
 }: {
   data: BarDatum[];
   yWidth: number;
+  mobileYWidth: number;
   chartKey: string;
 }) {
+  const phone = usePhone();
+  const tickSize = phone ? 10 : 12;
+  const axisTick = { fill: "#56677f", fontSize: tickSize };
+  const categoryTick = { fill: "#192841", fontSize: tickSize };
+  const axisWidth = phone ? mobileYWidth : yWidth;
+
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart
@@ -194,7 +213,7 @@ function HorizontalBars({
         barCategoryGap={16}
         barSize={20}
         maxBarSize={20}
-        margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
+        margin={{ top: 4, right: phone ? 8 : 16, left: 0, bottom: 0 }}
       >
         <CartesianGrid horizontal={false} stroke="#dce3ed" />
         <XAxis
@@ -208,7 +227,7 @@ function HorizontalBars({
         <YAxis
           type="category"
           dataKey="name"
-          width={yWidth}
+          width={axisWidth}
           interval={0}
           tick={categoryTick}
           axisLine={false}
@@ -228,6 +247,8 @@ function HorizontalBars({
 
 export default function DashboardPage() {
   const filterId = useId();
+  const phone = usePhone();
+  const axisTick = { fill: "#56677f", fontSize: phone ? 10 : 12 };
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
   const [data, setData] = useState<DashboardData>({ contacts: [], tasks: [], history: [] });
   const [loading, setLoading] = useState(true);
@@ -329,16 +350,13 @@ export default function DashboardPage() {
   const months = recentMonths(scopedContacts);
 
   return (
-    <>
-      <Sidebar />
-      <div className="min-h-screen pl-[234px]">
-        <main className="mx-auto max-w-[1600px] px-10 py-8">
-          <div className="flex flex-wrap items-end justify-between gap-4">
+    <AppShell>
+          <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end md:justify-between">
             <div>
               <p className="text-sm font-medium text-blue">Trio CRM</p>
               <h1 className="mt-2 text-3xl font-semibold text-navy">Dashboard</h1>
             </div>
-            <div>
+            <div className="w-full md:w-auto">
               <label htmlFor={filterId} className="text-sm font-medium text-ink">
                 Business
               </label>
@@ -366,7 +384,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setLoadKey((value) => value + 1)}
-                className="mt-4 rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
+                className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
               >
                 Try again
               </button>
@@ -394,23 +412,38 @@ export default function DashboardPage() {
 
               <div className="mt-4 grid grid-cols-1 gap-4 min-[900px]:grid-cols-2">
                 <ChartCard title="Sales funnel by stage">
-                  <HorizontalBars data={funnel} yWidth={148} chartKey={`funnel-${businessFilter}`} />
+                  <HorizontalBars
+                    data={funnel}
+                    yWidth={148}
+                    mobileYWidth={124}
+                    chartKey={`funnel-${businessFilter}`}
+                  />
                 </ChartCard>
                 <ChartCard title="Leads by category">
-                  <HorizontalBars data={heats} yWidth={112} chartKey={`heats-${businessFilter}`} />
+                  <HorizontalBars
+                    data={heats}
+                    yWidth={112}
+                    mobileYWidth={92}
+                    chartKey={`heats-${businessFilter}`}
+                  />
                 </ChartCard>
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 min-[900px]:grid-cols-2">
                 <ChartCard title="Contacts by business">
-                  <HorizontalBars data={businesses} yWidth={112} chartKey="businesses" />
+                  <HorizontalBars
+                    data={businesses}
+                    yWidth={112}
+                    mobileYWidth={96}
+                    chartKey="businesses"
+                  />
                 </ChartCard>
                 <ChartCard title="New contacts per month">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       key={businessFilter}
                       data={months}
-                      margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                      margin={{ top: 8, right: phone ? 8 : 16, left: 0, bottom: 0 }}
                     >
                       <CartesianGrid vertical={false} stroke="#dce3ed" />
                       <XAxis
@@ -443,8 +476,6 @@ export default function DashboardPage() {
               </div>
             </>
           )}
-        </main>
-      </div>
-    </>
+    </AppShell>
   );
 }

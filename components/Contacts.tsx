@@ -18,10 +18,10 @@ import type { Business, Contact } from "@/lib/types";
 type BusinessFilter = "all" | Business;
 
 const controlClass =
-  "mt-1.5 block w-full min-w-52 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2";
+  "input mt-1.5 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:min-w-52";
 
 const primaryButtonClass =
-  "rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink";
+  "btn inline-flex items-center justify-center rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink";
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message
@@ -59,19 +59,43 @@ function ContactRow({ contact }: { contact: Contact }) {
     <li>
       <Link
         href={`/contacts/${contact.id}`}
-        className="grid gap-3 px-4 py-4 transition-colors hover:bg-page focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-navy sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-6"
+        className="block rounded-xl border border-line bg-white p-4 transition-colors hover:border-navy/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] md:items-center md:gap-6 md:rounded-none md:border-0 md:bg-transparent md:px-4 md:py-4 md:hover:border-transparent md:hover:bg-page"
       >
-        <div className="min-w-0">
+        <div className="md:hidden">
+          <p className="font-semibold text-navy">{contact.name}</p>
+          <p className="mt-0.5 text-sm text-muted">{place || "No company or location"}</p>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="inline-flex min-w-0 items-center gap-2 text-sm text-ink">
+              <span
+                aria-hidden="true"
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: brand.color }}
+              />
+              <span className="truncate">{brand.name}</span>
+            </span>
+            <span
+              className="inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+              style={{ backgroundColor: heatStyle.bg, color: heatStyle.ink }}
+            >
+              {heatStyle.name}
+            </span>
+          </div>
+          <p className={`mt-3 text-sm font-semibold ${overdue ? "text-danger" : "text-muted"}`}>
+            {dueLabel(contact.follow_up)}
+          </p>
+        </div>
+
+        <div className="hidden min-w-0 md:block">
           <p className="truncate font-semibold text-navy">{contact.name}</p>
           <p className="mt-0.5 truncate text-sm text-muted">{place || "No company or location"}</p>
         </div>
-        <div className="min-w-0">
+        <div className="hidden min-w-0 md:block">
           <p className="truncate text-sm text-ink">{nextAction || "No follow-up"}</p>
           <p className={`mt-0.5 text-xs font-semibold ${overdue ? "text-danger" : "text-muted"}`}>
             {dueLabel(contact.follow_up)}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="hidden flex-wrap gap-2 md:flex">
           <span
             className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold text-white"
             style={{ backgroundColor: brand.color }}
@@ -146,13 +170,13 @@ export function Contacts() {
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end md:justify-between">
         <div>
           <p className="text-sm font-medium text-blue">Trio CRM</p>
           <h1 className="mt-2 text-3xl font-semibold text-navy">Contacts</h1>
         </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
+        <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-end">
+          <div className="w-full md:w-auto">
             <label htmlFor={filterId} className="text-sm font-medium text-ink">
               Business
             </label>
@@ -170,7 +194,7 @@ export function Contacts() {
               ))}
             </select>
           </div>
-          <button type="button" onClick={() => setAdding(true)} className={primaryButtonClass}>
+          <button type="button" onClick={() => setAdding(true)} className={`${primaryButtonClass} w-full md:w-auto`}>
             Add contact
           </button>
         </div>
@@ -184,7 +208,7 @@ export function Contacts() {
           <button
             type="button"
             onClick={() => setLoadKey((value) => value + 1)}
-            className="mt-4 rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
+            className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
           >
             Try again
           </button>
@@ -201,7 +225,7 @@ export function Contacts() {
           </button>
         </section>
       ) : (
-        <ul className="mt-8 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-white">
+        <ul className="mt-8 flex flex-col gap-3 md:block md:divide-y md:divide-line md:gap-0 md:overflow-hidden md:rounded-2xl md:border md:border-line md:bg-white">
           {visible.map((contact) => (
             <ContactRow key={contact.id} contact={contact} />
           ))}

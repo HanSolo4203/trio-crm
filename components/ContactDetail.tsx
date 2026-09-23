@@ -47,13 +47,13 @@ type Bundle = {
 };
 
 const controlClass =
-  "mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 placeholder:text-muted/70 focus:border-navy focus:ring-2";
+  "input mt-1.5 w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 placeholder:text-muted/70 focus:border-navy focus:ring-2";
 
 const primaryButtonClass =
-  "rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60";
+  "btn inline-flex items-center justify-center rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButtonClass =
-  "rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page disabled:cursor-not-allowed disabled:opacity-60";
+  "btn-compact inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page disabled:cursor-not-allowed disabled:opacity-60";
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message
@@ -248,7 +248,7 @@ function NewChatForm({
       <h2 className="text-base font-semibold text-navy">New chat</h2>
       <form onSubmit={handleSubmit} className="mt-4" noValidate>
         <fieldset disabled={submitting} className="min-w-0 border-0 p-0">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <FieldLabel htmlFor={`${formId}-date`}>Date</FieldLabel>
               <input
@@ -302,7 +302,7 @@ function NewChatForm({
                 Follow-ups for closed leads are paused.
               </p>
             ) : (
-              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_11.5rem]">
+              <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_11.5rem]">
                 <div>
                   <FieldLabel htmlFor={`${formId}-action`}>What needs to happen?</FieldLabel>
                   <input
@@ -342,7 +342,7 @@ function NewChatForm({
           </p>
         ) : null}
 
-        <button type="submit" disabled={submitting} className={`mt-4 ${primaryButtonClass}`}>
+        <button type="submit" disabled={submitting} className={`mt-4 w-full md:w-auto ${primaryButtonClass}`}>
           {submitting ? "Saving…" : "Add chat"}
         </button>
       </form>
@@ -385,7 +385,7 @@ function LinkFollowupForm({
   return (
     <form onSubmit={handleSubmit} className="mt-4 border-t border-line pt-3">
       <p className="text-sm font-medium text-ink">Add a follow-up</p>
-      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-center">
         <label htmlFor={`${formId}-text`} className="sr-only">
           Follow-up
         </label>
@@ -399,7 +399,7 @@ function LinkFollowupForm({
             setText(event.target.value);
             setError(null);
           }}
-          className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 placeholder:text-muted/70 focus:border-navy focus:ring-2"
+          className="input w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 placeholder:text-muted/70 focus:border-navy focus:ring-2"
         />
         <label htmlFor={`${formId}-date`} className="sr-only">
           Follow-up date
@@ -413,9 +413,9 @@ function LinkFollowupForm({
             setDate(event.target.value);
             setError(null);
           }}
-          className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 sm:w-40"
+          className="input w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:w-40"
         />
-        <button type="submit" disabled={submitting} className={secondaryButtonClass}>
+        <button type="submit" disabled={submitting} className={`${secondaryButtonClass} w-full md:w-auto`}>
           {submitting ? "Saving…" : "Add"}
         </button>
       </div>
@@ -490,12 +490,12 @@ function FollowUpCard({
         {dueLabel(task.date)}
       </p>
       <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{task.text || "Follow-up"}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-col gap-2 md:flex-row md:flex-wrap">
         <button
           type="button"
           onClick={handleComplete}
           disabled={busy}
-          className={primaryButtonClass}
+          className={`${primaryButtonClass} w-full md:w-auto`}
         >
           {completing ? "Saving…" : "Done"}
         </button>
@@ -503,14 +503,14 @@ function FollowUpCard({
           <button
             type="button"
             onClick={() => onOpenChat(logId)}
-            className={secondaryButtonClass}
+            className={`${secondaryButtonClass} w-full md:w-auto`}
           >
             Open linked chat
           </button>
         ) : null}
       </div>
-      <form onSubmit={handleReschedule} className="mt-3 flex flex-wrap items-end gap-2">
-        <div>
+      <form onSubmit={handleReschedule} className="mt-3 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
+        <div className="w-full min-w-0 md:w-auto">
           <label htmlFor={`${formId}-date`} className="text-xs font-medium text-muted">
             Date
           </label>
@@ -520,10 +520,10 @@ function FollowUpCard({
             type="date"
             value={date}
             onChange={(event) => setDate(event.target.value)}
-            className="mt-1 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2"
+            className="input mt-1 w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:w-auto"
           />
         </div>
-        <button type="submit" disabled={busy} className={secondaryButtonClass}>
+        <button type="submit" disabled={busy} className={`${secondaryButtonClass} w-full md:w-auto`}>
           {rescheduling ? "Saving…" : "Change date"}
         </button>
       </form>
@@ -740,7 +740,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
           <button
             type="button"
             onClick={() => setLoadKey((value) => value + 1)}
-            className={`mt-4 ${secondaryButtonClass}`}
+            className={`btn mt-4 inline-flex items-center justify-center ${secondaryButtonClass}`}
           >
             Try again
           </button>
@@ -776,7 +776,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
 
   return (
     <>
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)_minmax(0,1fr)]">
         <section className="min-w-0 rounded-2xl border border-line bg-white p-5">
           <div className="flex items-start justify-between gap-3">
             <span
@@ -788,7 +788,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className={secondaryButtonClass}
+              className={`${secondaryButtonClass} shrink-0`}
             >
               Edit contact
             </button>
@@ -839,7 +839,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
                 setConfirmingDelete(true);
               }}
               disabled={deleting}
-              className="rounded-lg border border-danger/30 px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn inline-flex w-full items-center justify-center rounded-lg border border-danger/30 px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
             >
               Delete contact
             </button>
@@ -876,7 +876,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
                         highlightId === entry.id ? "rounded-lg ring-2 ring-mint" : ""
                       }`}
                     >
-                      <summary className="cursor-pointer px-1 py-2 text-sm font-medium text-ink">
+                      <summary className="min-h-11 cursor-pointer px-1 py-3 text-sm font-medium text-ink md:min-h-0 md:py-2">
                         <span>{entryDateLabel(entry) || "No date"}</span>
                         <span className="text-muted"> · {summaryLabel}</span>
                       </summary>
@@ -915,7 +915,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
             )}
 
             <details className="mt-5 rounded-xl border border-line bg-page px-4 py-3">
-              <summary className="cursor-pointer text-sm font-semibold text-navy">
+              <summary className="min-h-11 cursor-pointer py-1 text-sm font-semibold text-navy md:min-h-0">
                 Other activity ({activity.length})
               </summary>
               {activity.length === 0 ? (
@@ -1048,7 +1048,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
         onClick={(event) => {
           if (event.target === event.currentTarget && !deleting) setConfirmingDelete(false);
         }}
-        className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-line bg-white p-6 text-ink shadow-xl backdrop:bg-navy/40"
+        className="m-auto w-[min(28rem,calc(100vw-2rem))] max-w-full rounded-2xl border border-line bg-white p-5 text-ink shadow-xl backdrop:bg-navy/40 md:p-6"
       >
         <h2 id="delete-contact-title" className="text-lg font-semibold text-navy">
           Delete {contact.name}?
@@ -1061,7 +1061,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
             {deleteError}
           </p>
         ) : null}
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="mt-6 flex flex-col gap-2 md:flex-row md:justify-end">
           <button
             type="button"
             onClick={() => {
@@ -1069,7 +1069,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
               setConfirmingDelete(false);
             }}
             disabled={deleting}
-            className={secondaryButtonClass}
+            className={`${secondaryButtonClass} w-full md:w-auto`}
           >
             Cancel
           </button>
@@ -1079,7 +1079,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
               void handleDelete();
             }}
             disabled={deleting}
-            className="rounded-lg bg-danger px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn inline-flex w-full items-center justify-center rounded-lg bg-danger px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
           >
             {deleting ? "Deleting…" : "Delete contact"}
           </button>
