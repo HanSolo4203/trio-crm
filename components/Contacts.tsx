@@ -47,6 +47,42 @@ function compareContacts(a: Contact, b: Contact) {
   return a.name.localeCompare(b.name);
 }
 
+const tagPillClass =
+  "inline-flex rounded-full bg-[#e8edf4] px-2.5 py-1 text-xs font-semibold text-muted";
+
+function TagPills({ tags, limit }: { tags: string[] | null | undefined; limit?: number }) {
+  const list = tags ?? [];
+  if (list.length === 0) return null;
+  const shown = limit == null ? list : list.slice(0, limit);
+  const extra = list.length - shown.length;
+  return (
+    <>
+      {shown.map((tag) => (
+        <span key={tag} className={tagPillClass}>
+          {tag}
+        </span>
+      ))}
+      {extra > 0 ? <span className={tagPillClass}>+{extra}</span> : null}
+    </>
+  );
+}
+
+function tagsByFrequency(contacts: Contact[]) {
+  const counts = new Map<string, number>();
+  contacts.forEach((contact) => {
+    const seen = new Set<string>();
+    (contact.tags ?? []).forEach((tag) => {
+      const value = tag.trim();
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    });
+  });
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([tag]) => tag);
+}
+
 function ContactRow({ contact }: { contact: Contact }) {
   const brand = business(contact.business);
   const heatStyle = heat(contact.heat);
@@ -80,6 +116,11 @@ function ContactRow({ contact }: { contact: Contact }) {
               {heatStyle.name}
             </span>
           </div>
+          {(contact.tags ?? []).length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <TagPills tags={contact.tags} limit={3} />
+            </div>
+          ) : null}
           <p className={`mt-3 text-sm font-semibold ${overdue ? "text-danger" : "text-muted"}`}>
             {dueLabel(contact.follow_up)}
           </p>
@@ -102,6 +143,7 @@ function ContactRow({ contact }: { contact: Contact }) {
           >
             {brand.name}
           </span>
+          <TagPills tags={contact.tags} limit={3} />
           <span
             className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
             style={{ backgroundColor: heatStyle.bg, color: heatStyle.ink }}
@@ -123,6 +165,7 @@ function ContactRow({ contact }: { contact: Contact }) {
 export function Contacts() {
   const filterId = useId();
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -161,9 +204,21 @@ export function Contacts() {
     };
   }, [loadKey]);
 
+  const tagChoices = tagsByFrequency(contacts);
   const visible = contacts
     .filter((contact) => businessFilter === "all" || contact.business === businessFilter)
+    .filter((contact) => {
+      if (selectedTags.length === 0) return true;
+      const tags = contact.tags ?? [];
+      return selectedTags.some((tag) => tags.includes(tag));
+    })
     .sort(compareContacts);
+
+  function toggleTag(tag: string) {
+    setSelectedTags((current) =>
+      current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag],
+    );
+  }
 
   const defaultBusiness: Business =
     businessFilter === "all" ? BUSINESSES[0].id : businessFilter;
@@ -200,6 +255,29 @@ export function Contacts() {
         </div>
       </div>
 
+      {!error && !loading && tagChoices.length > 0 ? (
+        <div role="group" aria-label="Filter by tag" className="mt-6 flex flex-wrap gap-2">
+          {tagChoices.map((tag) => {
+            const active = selectedTags.includes(tag);
+            return (
+              <button
+                key={tag}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleTag(tag)}
+                className={
+                  active
+                    ? "inline-flex rounded-full bg-navy px-2.5 py-1 text-xs font-semibold text-white"
+                    : tagPillClass
+                }
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       {error ? (
         <section className="mt-8 rounded-2xl border border-line bg-white p-6">
           <p role="alert" className="text-sm text-danger">
@@ -218,7 +296,11 @@ export function Contacts() {
       ) : visible.length === 0 ? (
         <section className="mt-8 rounded-2xl border border-line bg-white px-6 py-16 text-center">
           <p className="text-sm text-muted">
-            {contacts.length === 0 ? "No contacts yet." : "No contacts for this business."}
+            {contacts.length === 0
+              ? "No contacts yet."
+              : selectedTags.length > 0
+                ? "No contacts with these tags."
+                : "No contacts for this business."}
           </p>
           <button type="button" onClick={() => setAdding(true)} className={`mt-4 ${primaryButtonClass}`}>
             Add contact
@@ -238,6 +320,7 @@ export function Contacts() {
         onSaved={() => setLoadKey((value) => value + 1)}
         editingContact={null}
         defaultBusiness={defaultBusiness}
+        contacts={loading || error ? undefined : contacts}
       />
     </>
   );

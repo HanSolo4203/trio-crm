@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   Bar,
@@ -15,7 +16,7 @@ import {
 } from "recharts";
 
 import { AppShell } from "@/components/AppShell";
-import { BUSINESSES, HEATS, isOpenStage, localDate, stage } from "@/lib/constants";
+import { BUSINESSES, formatRand, HEATS, isOpenStage, localDate, stage } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import type { Business, Contact, HistoryEntry, Stage, Task } from "@/lib/types";
 
@@ -242,6 +243,94 @@ function HorizontalBars({
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+  );
+}
+
+function commissionAmount(amount: number | null) {
+  const value = Number(amount);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function CommissionBadge({ status }: { status: "pending" | "paid" }) {
+  const paid = status === "paid";
+  return (
+    <span
+      className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+      style={
+        paid
+          ? { backgroundColor: "#e6f5ee", color: "#267156" }
+          : { backgroundColor: "#fff1d9", color: "#885712" }
+      }
+    >
+      {paid ? "Paid" : "Pending"}
+    </span>
+  );
+}
+
+function ReferralCommissions({ contacts }: { contacts: Contact[] }) {
+  const rows = [...contacts].sort((a, b) => a.name.localeCompare(b.name));
+  const pending = rows
+    .filter((contact) => contact.commission_status === "pending")
+    .reduce((sum, contact) => sum + commissionAmount(contact.commission_amount), 0);
+  const paid = rows
+    .filter((contact) => contact.commission_status === "paid")
+    .reduce((sum, contact) => sum + commissionAmount(contact.commission_amount), 0);
+
+  return (
+    <section className="mt-4 min-w-0 rounded-xl border border-line bg-white p-4 md:p-5">
+      <h2 className="text-base font-semibold text-navy">Referral commissions</h2>
+      <div className="mt-4 min-w-0 max-w-full overflow-x-auto">
+        <table className="w-full min-w-[36rem] text-left text-sm">
+          <caption className="sr-only">Referral commissions</caption>
+          <thead className="border-b border-line text-xs font-medium uppercase tracking-wide text-muted">
+            <tr>
+              <th scope="col" className="px-4 py-3 font-medium">
+                Contact name
+              </th>
+              <th scope="col" className="px-4 py-3 font-medium">
+                Referral source
+              </th>
+              <th scope="col" className="px-4 py-3 font-medium">
+                Status
+              </th>
+              <th scope="col" className="px-4 py-3 text-right font-medium">
+                Amount
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {rows.map((contact) => (
+              <tr key={contact.id}>
+                <td className="px-4 py-4 font-semibold text-navy">
+                  <Link href={`/contacts/${contact.id}`} className="hover:underline">
+                    {contact.name}
+                  </Link>
+                </td>
+                <td className="px-4 py-4 text-ink">
+                  {contact.referral_source?.trim() || "—"}
+                </td>
+                <td className="px-4 py-4">
+                  {contact.commission_status === "paid" || contact.commission_status === "pending" ? (
+                    <CommissionBadge status={contact.commission_status} />
+                  ) : null}
+                </td>
+                <td className="px-4 py-4 text-right tabular-nums text-ink">
+                  {formatRand(contact.commission_amount)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink">
+        <span>
+          Pending: <span className="font-semibold tabular-nums">{formatRand(pending)}</span>
+        </span>
+        <span>
+          Paid: <span className="font-semibold tabular-nums">{formatRand(paid)}</span>
+        </span>
+      </p>
+    </section>
   );
 }
 
@@ -474,6 +563,16 @@ export default function DashboardPage() {
                   </ResponsiveContainer>
                 </ChartCard>
               </div>
+
+              {scopedContacts.some((contact) => (contact.referral_source?.trim() ?? "") !== "") ? (
+                <ReferralCommissions
+                  contacts={scopedContacts.filter(
+                    (contact) =>
+                      contact.commission_status === "pending" ||
+                      contact.commission_status === "paid",
+                  )}
+                />
+              ) : null}
             </>
           )}
     </AppShell>

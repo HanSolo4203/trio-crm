@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, GitBranch, LayoutDashboard, Users, type LucideIcon } from "lucide-react";
+import { CalendarClock, GitBranch, LayoutDashboard, Search, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -24,7 +24,7 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function Sidebar() {
+export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const [dueCount, setDueCount] = useState<number | null>(null);
@@ -78,14 +78,24 @@ export function Sidebar() {
           </div>
           <p className="truncate text-sm font-semibold">Dylan&apos;s CRM</p>
         </div>
-        <button
-          type="button"
-          onClick={handleSignOut}
-          disabled={signingOut}
-          className="btn-compact inline-flex shrink-0 items-center rounded-lg px-2 text-sm font-medium text-white/80 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {signingOut ? "Signing out…" : "Sign out"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            aria-label="Search"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Search aria-hidden="true" size={20} strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="btn-compact inline-flex shrink-0 items-center rounded-lg px-2 text-sm font-medium text-white/80 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
       </header>
 
       <nav
@@ -131,7 +141,22 @@ export function Sidebar() {
           </div>
         </div>
 
-        <nav aria-label="Primary" className="mt-8 flex flex-1 flex-col gap-1 overflow-y-auto px-3">
+        <div className="px-3 pt-6">
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            aria-keyshortcuts="Meta+K Control+K"
+            className="flex w-full items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-left text-sm text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Search aria-hidden="true" size={16} strokeWidth={1.75} />
+            <span className="flex-1">Search</span>
+            <kbd className="rounded border border-white/20 px-1.5 py-0.5 text-[11px] font-medium text-white/50">
+              ⌘K
+            </kbd>
+          </button>
+        </div>
+
+        <nav aria-label="Primary" className="mt-4 flex flex-1 flex-col gap-1 overflow-y-auto px-3">
           {NAV.map((item) => {
             const active = isActive(pathname, item.href);
             return (

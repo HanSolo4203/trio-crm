@@ -141,6 +141,19 @@ function LeadCard({ contact }: { contact: Contact }) {
         >
           {brand.name}
         </span>
+        {(contact.tags ?? []).slice(0, 3).map((tag) => (
+          <span
+            key={tag}
+            className="inline-flex rounded-full bg-[#e8edf4] px-2.5 py-1 text-xs font-semibold text-muted"
+          >
+            {tag}
+          </span>
+        ))}
+        {(contact.tags ?? []).length > 3 ? (
+          <span className="inline-flex rounded-full bg-[#e8edf4] px-2.5 py-1 text-xs font-semibold text-muted">
+            +{(contact.tags ?? []).length - 3}
+          </span>
+        ) : null}
         <span
           className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
           style={{ backgroundColor: stageStyle.bg, color: stageStyle.ink }}

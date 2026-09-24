@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { formatDate, stage } from "./constants";
-import type { Contact, Heat, HistoryType, Stage } from "./types";
+import type { CommissionStatus, Contact, Heat, HistoryType, Stage } from "./types";
 
 export type ContactDraft = {
   business: Contact["business"];
@@ -14,8 +14,12 @@ export type ContactDraft = {
   backup_role?: string | null;
   backup_phone?: string | null;
   backup_email?: string | null;
+  referral_source?: string | null;
+  commission_status?: CommissionStatus;
+  commission_amount?: number | null;
   heat?: Heat;
   stage?: Stage;
+  tags?: string[];
 };
 
 export type FollowUpDraft = {
@@ -45,6 +49,7 @@ const NULLABLE_CONTACT_FIELDS = new Set<keyof ContactDraft>([
   "backup_role",
   "backup_phone",
   "backup_email",
+  "referral_source",
 ]);
 
 type TaskDate = { text: string; date: string | null };
@@ -59,12 +64,31 @@ function blankToNull(value: string | null | undefined) {
 }
 
 function contactPayload(fields: Partial<ContactDraft>) {
-  const payload: Record<string, string | null> = {};
+  const payload: Record<string, string | number | string[] | null> = {};
 
   (Object.keys(fields) as (keyof ContactDraft)[]).forEach((key) => {
     const value = fields[key];
-    if (value === undefined) return;
-    if (value === null || (NULLABLE_CONTACT_FIELDS.has(key) && !value.trim())) {
+
+    if (key === "tags") {
+      if (value === undefined) return;
+      payload[key] = Array.isArray(value) ? value : [];
+      return;
+    }
+
+    if (key === "commission_amount") {
+      if (value === "" || value === undefined || value === null) {
+        payload[key] = null;
+      } else {
+        payload[key] = Number(value);
+      }
+      return;
+    }
+
+    if (typeof value !== "string") {
+      if (value === null) payload[key] = null;
+      return;
+    }
+    if (NULLABLE_CONTACT_FIELDS.has(key) && !value.trim()) {
       payload[key] = null;
       return;
     }
@@ -204,7 +228,7 @@ export async function createContact(
 ) {
   const { data, error } = await supabase
     .from("crm_contacts")
-    .insert(contactPayload(fields))
+    .insert(contactPayload({ ...fields, tags: fields.tags ?? [] }))
     .select("*")
     .single();
   raise(error);

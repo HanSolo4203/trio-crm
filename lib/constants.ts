@@ -114,6 +114,16 @@ export function formatDate(value?: string | Date | null) {
   return formatDate(localDate(date));
 }
 
+export function formatRand(amount: number | string | null | undefined) {
+  const value = typeof amount === "number" ? amount : Number(amount);
+  const safe = Number.isFinite(value) ? value : 0;
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safe);
+  return `R ${formatted}`;
+}
+
 export function formatTimestamp(value?: string | Date | null) {
   if (value == null || value === "") return "";
 

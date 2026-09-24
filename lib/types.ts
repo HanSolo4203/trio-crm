@@ -8,6 +8,7 @@ export type Stage =
   | "client"
   | "closed";
 export type HistoryType = "note" | "activity" | "followup" | "chat";
+export type CommissionStatus = "none" | "pending" | "paid";
 
 export interface Contact {
   id: string;
@@ -22,8 +23,12 @@ export interface Contact {
   backup_role: string | null;
   backup_phone: string | null;
   backup_email: string | null;
+  referral_source: string | null;
+  commission_status: CommissionStatus;
+  commission_amount: number | null;
   heat: Heat;
   stage: Stage;
+  tags: string[];
   next_action: string | null;
   follow_up: string | null;
   created_at: string;

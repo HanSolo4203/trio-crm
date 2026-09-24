@@ -57,8 +57,10 @@ export async function middleware(request: NextRequest) {
   const isLogin = pathname === "/login";
   const isAuthApi =
     pathname === "/api/auth" || pathname.startsWith("/api/auth/");
+  // Cron hits this with DIGEST_SECRET; the route rejects anything else.
+  const isDigest = pathname === "/api/digest";
 
-  if (!isAuthenticated && !isLogin && !isAuthApi) {
+  if (!isAuthenticated && !isLogin && !isAuthApi && !isDigest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     const redirectResponse = NextResponse.redirect(url);

@@ -1,19 +1,22 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useId,
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { BUSINESSES, HEATS, STAGES } from "@/lib/constants";
+import { BUSINESSES, HEATS, STAGES, business } from "@/lib/constants";
 import { createContact, updateContact, type ContactExtras } from "@/lib/crm";
 import { createClient } from "@/lib/supabase/client";
-import type { Business, Contact, Heat, Stage } from "@/lib/types";
+import type { Business, CommissionStatus, Contact, Heat, Stage } from "@/lib/types";
 
 type ContactFormDialogProps = {
   open: boolean;
@@ -21,6 +24,14 @@ type ContactFormDialogProps = {
   onSaved: (contactId: string) => void;
   editingContact: Contact | null;
   defaultBusiness: Business;
+  contacts?: Contact[];
+};
+
+type DuplicateMatch = {
+  id: string;
+  name: string;
+  businessName: string;
+  matchedOn: "phone" | "email" | "both";
 };
 
 type FormState = {
@@ -36,6 +47,10 @@ type FormState = {
   backup_role: string;
   backup_phone: string;
   backup_email: string;
+  referral_source: string;
+  commission_status: CommissionStatus;
+  commission_amount: string;
+  tags: string[];
   followUpText: string;
   followUpDate: string;
   note: string;
@@ -58,6 +73,10 @@ function emptyForm(business: Business): FormState {
     backup_role: "",
     backup_phone: "",
     backup_email: "",
+    referral_source: "",
+    commission_status: "none",
+    commission_amount: "",
+    tags: [],
     followUpText: "",
     followUpDate: "",
     note: "",
@@ -78,6 +97,11 @@ function formFromContact(contact: Contact): FormState {
     backup_role: contact.backup_role ?? "",
     backup_phone: contact.backup_phone ?? "",
     backup_email: contact.backup_email ?? "",
+    referral_source: contact.referral_source ?? "",
+    commission_status: contact.commission_status ?? "none",
+    commission_amount:
+      contact.commission_amount == null ? "" : String(contact.commission_amount),
+    tags: contact.tags ?? [],
     // A save can attach a new follow-up and note. Existing ones stay as they are.
     followUpText: "",
     followUpDate: "",
@@ -117,13 +141,107 @@ function SectionHeading({ children }: { children: ReactNode }) {
   return <h3 className="text-sm font-semibold text-navy">{children}</h3>;
 }
 
+function normalizePhone(value: string) {
+  return value.replace(/[\s()-]/g, "");
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function orLiteral(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+function duplicateLabel(matchedOn: DuplicateMatch["matchedOn"]) {
+  if (matchedOn === "both") return "phone and email";
+  return matchedOn;
+}
+
+function findDuplicate(
+  contacts: Pick<Contact, "id" | "name" | "business" | "phone" | "email">[],
+  phone: string,
+  email: string,
+): DuplicateMatch | null {
+  const normalizedPhone = normalizePhone(phone);
+  const normalizedEmail = normalizeEmail(email);
+  let phoneMatch: (typeof contacts)[number] | null = null;
+  let emailMatch: (typeof contacts)[number] | null = null;
+
+  for (const contact of contacts) {
+    const phoneHit =
+      Boolean(normalizedPhone) &&
+      Boolean(contact.phone) &&
+      normalizePhone(contact.phone ?? "") === normalizedPhone;
+    const emailHit =
+      Boolean(normalizedEmail) &&
+      Boolean(contact.email) &&
+      normalizeEmail(contact.email ?? "") === normalizedEmail;
+
+    if (phoneHit && emailHit) return toDuplicateMatch(contact, "both");
+    if (phoneHit && !phoneMatch) phoneMatch = contact;
+    if (emailHit && !emailMatch) emailMatch = contact;
+  }
+
+  if (phoneMatch) return toDuplicateMatch(phoneMatch, "phone");
+  if (emailMatch) return toDuplicateMatch(emailMatch, "email");
+  return null;
+}
+
+function toDuplicateMatch(
+  contact: Pick<Contact, "id" | "name" | "business">,
+  matchedOn: DuplicateMatch["matchedOn"],
+): DuplicateMatch {
+  return {
+    id: contact.id,
+    name: contact.name,
+    businessName: business(contact.business).name,
+    matchedOn,
+  };
+}
+
+async function queryDuplicate(
+  supabase: SupabaseClient,
+  phone: string,
+  email: string,
+) {
+  const filters: string[] = [];
+  const normalizedPhone = normalizePhone(phone);
+  const normalizedEmail = normalizeEmail(email);
+
+  if (normalizedPhone) filters.push(`phone.eq.${orLiteral(normalizedPhone)}`);
+  if (normalizedEmail) {
+    const literal = normalizedEmail.replace(/[%_\\]/g, (char) => `\\${char}`);
+    filters.push(`email.ilike.${orLiteral(literal)}`);
+  }
+  if (filters.length === 0) return null;
+
+  const { data, error } = await supabase
+    .from("crm_contacts")
+    .select("id, name, business, phone, email")
+    .or(filters.join(","));
+  if (error) throw new Error(error.message);
+
+  return findDuplicate((data ?? []) as Contact[], phone, email);
+}
+
+function addTag(tags: string[], raw: string) {
+  return raw.split(",").reduce((next, part) => {
+    const tag = part.trim().toLowerCase();
+    if (!tag || next.includes(tag)) return next;
+    return [...next, tag];
+  }, tags);
+}
+
 export function ContactFormDialog({
   open,
   onClose,
   onSaved,
   editingContact,
   defaultBusiness,
+  contacts,
 }: ContactFormDialogProps) {
+  const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const followUpDateRef = useRef<HTMLInputElement>(null);
@@ -135,10 +253,13 @@ export function ContactFormDialog({
   const formErrorId = `${formId}-form-error`;
 
   const [form, setForm] = useState<FormState>(() => emptyForm(defaultBusiness));
+  const [tagDraft, setTagDraft] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null);
+  const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
   const [prevOpen, setPrevOpen] = useState(false);
   const [prevEditingId, setPrevEditingId] = useState<string | null>(null);
 
@@ -151,9 +272,12 @@ export function ContactFormDialog({
       setForm(
         editingContact ? formFromContact(editingContact) : emptyForm(defaultBusiness),
       );
+      setTagDraft("");
       setNameError(null);
       setFollowUpError(null);
       setFormError(null);
+      setDuplicate(null);
+      setDuplicateAcknowledged(false);
       setSubmitting(false);
     }
   }
@@ -175,8 +299,34 @@ export function ContactFormDialog({
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
     if (key === "name") setNameError(null);
+    if (key === "phone" || key === "email") {
+      setDuplicate(null);
+      setDuplicateAcknowledged(false);
+    }
     if (key === "followUpText" || key === "followUpDate" || key === "stage") {
       setFollowUpError(null);
+    }
+  }
+
+  function commitTagDraft(raw = tagDraft) {
+    setForm((current) => ({ ...current, tags: addTag(current.tags, raw) }));
+    setTagDraft("");
+  }
+
+  function removeTag(tag: string) {
+    setForm((current) => ({ ...current, tags: current.tags.filter((item) => item !== tag) }));
+  }
+
+  function handleTagKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      commitTagDraft();
+      return;
+    }
+    if (event.key === "Backspace" && tagDraft === "" && form.tags.length > 0) {
+      event.preventDefault();
+      const last = form.tags[form.tags.length - 1];
+      removeTag(last);
     }
   }
 
@@ -212,6 +362,8 @@ export function ContactFormDialog({
       return;
     }
 
+    const phone = form.phone.trim();
+    const email = form.email.trim();
     const attempt = saveAttempt.current;
     setSubmitting(true);
 
@@ -226,8 +378,13 @@ export function ContactFormDialog({
       backup_role: form.backup_role,
       backup_phone: form.backup_phone,
       backup_email: form.backup_email,
+      referral_source: form.referral_source,
+      commission_status: form.commission_status,
+      commission_amount:
+        form.commission_amount === "" ? null : Number(form.commission_amount),
       heat: form.heat,
       stage: form.stage,
+      tags: addTag(form.tags, tagDraft),
     };
     const extras: ContactExtras = {
       note: form.note,
@@ -239,6 +396,19 @@ export function ContactFormDialog({
 
     try {
       const supabase = createClient();
+
+      if (!editingContact && (phone || email) && !duplicateAcknowledged) {
+        const match = contacts
+          ? findDuplicate(contacts, phone, email)
+          : await queryDuplicate(supabase, phone, email);
+        if (saveAttempt.current !== attempt) return;
+        if (match) {
+          setDuplicate(match);
+          setDuplicateAcknowledged(true);
+          return;
+        }
+      }
+
       const saved = editingContact
         ? await updateContact(supabase, editingContact.id, fields, extras)
         : await createContact(supabase, fields, extras);
@@ -425,6 +595,48 @@ export function ContactFormDialog({
               </Field>
             </div>
 
+            <div className="mt-4">
+              <label htmlFor={`${formId}-tags`} className="text-sm font-medium text-ink">
+                Tags
+              </label>
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-line bg-white px-2 py-1.5 focus-within:border-navy focus-within:ring-2 focus-within:ring-mint/40">
+                {form.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-full bg-[#e8edf4] py-1 pl-2.5 pr-1 text-xs font-semibold text-muted"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${tag}`}
+                      onClick={() => removeTag(tag)}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted hover:bg-white hover:text-ink"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <input
+                  id={`${formId}-tags`}
+                  name="tags"
+                  type="text"
+                  autoComplete="off"
+                  value={tagDraft}
+                  placeholder={form.tags.length === 0 ? "Add a tag" : ""}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value.includes(",")) {
+                      commitTagDraft(value);
+                      return;
+                    }
+                    setTagDraft(value);
+                  }}
+                  onKeyDown={handleTagKeyDown}
+                  className="min-w-[8rem] flex-1 border-0 bg-transparent px-1 py-1 text-sm text-ink outline-none placeholder:text-muted/70"
+                />
+              </div>
+            </div>
+
             <section className="mt-6 border-t border-line pt-5">
               <SectionHeading>Backup contact</SectionHeading>
               <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -472,6 +684,57 @@ export function ContactFormDialog({
                     className={controlClass}
                   />
                 </Field>
+              </div>
+            </section>
+
+            <section className="mt-6 border-t border-line pt-5">
+              <SectionHeading>Referral</SectionHeading>
+              <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Field
+                  id={`${formId}-referral-source`}
+                  label="Referral source"
+                  className="md:col-span-2"
+                >
+                  <input
+                    id={`${formId}-referral-source`}
+                    name="referral_source"
+                    type="text"
+                    autoComplete="off"
+                    value={form.referral_source}
+                    onChange={(event) => updateField("referral_source", event.target.value)}
+                    className={controlClass}
+                  />
+                </Field>
+                <Field id={`${formId}-commission-status`} label="Commission status">
+                  <select
+                    id={`${formId}-commission-status`}
+                    name="commission_status"
+                    value={form.commission_status}
+                    onChange={(event) =>
+                      updateField("commission_status", event.target.value as CommissionStatus)
+                    }
+                    className={controlClass}
+                  >
+                    <option value="none">None</option>
+                    <option value="pending">Pending</option>
+                    <option value="paid">Paid</option>
+                  </select>
+                </Field>
+                {form.commission_status !== "none" ? (
+                  <Field id={`${formId}-commission-amount`} label="Commission amount">
+                    <input
+                      id={`${formId}-commission-amount`}
+                      name="commission_amount"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={0.01}
+                      value={form.commission_amount}
+                      onChange={(event) => updateField("commission_amount", event.target.value)}
+                      className={controlClass}
+                    />
+                  </Field>
+                ) : null}
               </div>
             </section>
 
@@ -539,6 +802,27 @@ export function ContactFormDialog({
         </div>
 
         <footer className="sticky bottom-0 z-10 shrink-0 border-t border-line bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 md:px-6 md:py-4">
+          {duplicate ? (
+            <div
+              role="status"
+              className="mb-3 rounded-lg bg-[#fff1d9] px-3 py-2 text-sm text-ink"
+            >
+              <p>
+                A contact with this {duplicateLabel(duplicate.matchedOn)} already exists:{" "}
+                {duplicate.name} ({duplicate.businessName}).
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(`/contacts/${duplicate.id}`);
+                }}
+                className="mt-1 text-sm font-medium text-blue underline-offset-2 hover:underline"
+              >
+                View existing contact
+              </button>
+            </div>
+          ) : null}
           {formError ? (
             <p
               id={formErrorId}
@@ -561,7 +845,13 @@ export function ContactFormDialog({
               disabled={submitting}
               className="btn inline-flex w-full items-center justify-center rounded-lg bg-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
             >
-              {submitting ? "Saving…" : editingContact ? "Save changes" : "Add contact"}
+              {submitting
+                ? "Saving…"
+                : editingContact
+                  ? "Save changes"
+                  : duplicate
+                    ? "Save anyway"
+                    : "Add contact"}
             </button>
           </div>
         </footer>

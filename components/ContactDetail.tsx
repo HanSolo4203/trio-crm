@@ -17,6 +17,7 @@ import {
   business,
   CHANNELS,
   formatDate,
+  formatRand,
   formatTimestamp,
   heat,
   HEATS,
@@ -779,12 +780,22 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)_minmax(0,1fr)]">
         <section className="min-w-0 rounded-2xl border border-line bg-white p-5">
           <div className="flex items-start justify-between gap-3">
-            <span
-              className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold text-white"
-              style={{ backgroundColor: brand.color }}
-            >
-              {brand.name}
-            </span>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span
+                className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold text-white"
+                style={{ backgroundColor: brand.color }}
+              >
+                {brand.name}
+              </span>
+              {(contact.tags ?? []).map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex rounded-full bg-[#e8edf4] px-2.5 py-1 text-xs font-semibold text-muted"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -826,6 +837,26 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
                 value={contact.backup_email}
                 href={contact.backup_email ? emailHref(contact.backup_email) : null}
               />
+            </InfoItem>
+            <InfoItem label="Referral">
+              <span className="flex flex-wrap items-center gap-2">
+                <TextValue value={contact.referral_source} />
+                {contact.commission_status !== "none" ? (
+                  <>
+                    <span
+                      className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+                      style={
+                        contact.commission_status === "paid"
+                          ? { backgroundColor: "#e6f5ee", color: "#267156" }
+                          : { backgroundColor: "#fff1d9", color: "#885712" }
+                      }
+                    >
+                      {contact.commission_status === "paid" ? "Paid" : "Pending"}
+                    </span>
+                    <span className="tabular-nums">{formatRand(contact.commission_amount)}</span>
+                  </>
+                ) : null}
+              </span>
             </InfoItem>
           </dl>
 

@@ -1,10 +1,12 @@
 import { AppShell } from "@/components/AppShell";
 import { ContactDetail } from "@/components/ContactDetail";
 
-export default function ContactPage({ params }: { params: { id: string } }) {
+export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
   return (
     <AppShell>
-      <ContactDetail contactId={params.id} />
+      <ContactDetail contactId={id} />
     </AppShell>
   );
 }
