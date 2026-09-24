@@ -28,7 +28,12 @@ dialog.sheet-dialog {
 }
 
 dialog.sheet-dialog::backdrop {
-  background: rgb(18 35 66 / 0.4);
+  background: color-mix(in srgb, theme("colors.navy") 40%, transparent);
+}
+
+/* Unlayered so this radius wins over any leftover rounded-* utility. */
+.btn-primary {
+  border-radius: 9999px;
 }
 
 @media (max-width: 767px) {
@@ -49,7 +54,7 @@ dialog.sheet-dialog::backdrop {
     max-height: min(90vh, 52rem);
     margin: auto;
     overflow: visible;
-    border: 1px solid #dce3ed;
+    border: 1px solid theme("colors.line");
     border-radius: 1rem;
     box-shadow:
       0 20px 25px -5px rgb(0 0 0 / 0.1),

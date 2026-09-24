@@ -1,6 +1,6 @@
 "use client";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -12,9 +12,9 @@ import {
   type ReactNode,
 } from "react";
 
+import { BusinessPill, TagPill } from "@/components/BusinessSettingsProvider";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import {
-  business,
   CHANNELS,
   formatDate,
   formatRand,
@@ -34,24 +34,25 @@ import {
   setLeadPosition,
   type ConversationInput,
 } from "@/lib/crm";
+import { queryKeys } from "@/lib/queryKeys";
+import {
+  fetchContact,
+  fetchContactHistory,
+  fetchContactTasks,
+  invalidateCrm,
+} from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
-import type { Contact, Heat, HistoryEntry, Stage, Task } from "@/lib/types";
+import type { Heat, HistoryEntry, Stage, Task } from "@/lib/types";
 
 type ContactDetailProps = {
   contactId: string;
-};
-
-type Bundle = {
-  contact: Contact;
-  history: HistoryEntry[];
-  tasks: Task[];
 };
 
 const controlClass =
   "input mt-1.5 w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 placeholder:text-muted/70 focus:border-navy focus:ring-2";
 
 const primaryButtonClass =
-  "btn inline-flex items-center justify-center rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60";
+  "btn btn-primary inline-flex items-center justify-center rounded-full bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButtonClass =
   "btn-compact inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page disabled:cursor-not-allowed disabled:opacity-60";
@@ -60,34 +61,6 @@ function errorMessage(error: unknown) {
   return error instanceof Error && error.message
     ? error.message
     : "Something went wrong. Try again.";
-}
-
-function raise(error: { message: string } | null) {
-  if (error) throw new Error(error.message);
-}
-
-async function fetchBundle(supabase: SupabaseClient, contactId: string): Promise<Bundle> {
-  const [contactResult, historyResult, taskResult] = await Promise.all([
-    supabase.from("crm_contacts").select("*").eq("id", contactId).maybeSingle(),
-    supabase.from("crm_history").select("*").eq("contact_id", contactId),
-    supabase.from("crm_tasks").select("*").eq("contact_id", contactId),
-  ]);
-
-  raise(contactResult.error);
-  raise(historyResult.error);
-  raise(taskResult.error);
-
-  if (!contactResult.data) {
-    const missing = new Error("This contact could not be found.");
-    missing.name = "NotFound";
-    throw missing;
-  }
-
-  return {
-    contact: contactResult.data as Contact,
-    history: (historyResult.data ?? []) as HistoryEntry[],
-    tasks: (taskResult.data ?? []) as Task[],
-  };
 }
 
 function compareNewest(a: HistoryEntry, b: HistoryEntry) {
@@ -245,7 +218,7 @@ function NewChatForm({
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-white p-5">
+    <section className="rounded-2xl border border-line/60 bg-white shadow-card p-5">
       <h2 className="text-base font-semibold text-navy">New chat</h2>
       <form onSubmit={handleSubmit} className="mt-4" noValidate>
         <fieldset disabled={submitting} className="min-w-0 border-0 p-0">
@@ -486,7 +459,7 @@ function FollowUpCard({
   const overdue = Boolean(task.date && task.date < localDate());
 
   return (
-    <article className="rounded-xl border border-line bg-page px-3 py-3">
+    <article className="rounded-2xl border border-line/60 bg-page px-3 py-3">
       <p className={`text-xs font-semibold ${overdue ? "text-danger" : "text-muted"}`}>
         {dueLabel(task.date)}
       </p>
@@ -539,15 +512,22 @@ function FollowUpCard({
 
 export function ContactDetail({ contactId }: ContactDetailProps) {
   const router = useRouter();
-  const contactIdRef = useRef(contactId);
-  const reloadSeq = useRef(0);
-  contactIdRef.current = contactId;
+  const queryClient = useQueryClient();
+  const contactQuery = useQuery({
+    queryKey: queryKeys.contact(contactId),
+    queryFn: () => fetchContact(contactId),
+    retry: (failureCount, error) =>
+      !(error instanceof Error && error.name === "NotFound") && failureCount < 3,
+  });
+  const historyQuery = useQuery({
+    queryKey: queryKeys.contactHistory(contactId),
+    queryFn: () => fetchContactHistory(contactId),
+  });
+  const tasksQuery = useQuery({
+    queryKey: queryKeys.contactTasks(contactId),
+    queryFn: () => fetchContactTasks(contactId),
+  });
 
-  const [bundle, setBundle] = useState<Bundle | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [missing, setMissing] = useState(false);
-  const [loadKey, setLoadKey] = useState(0);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -562,62 +542,42 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
 
   const reload = useCallback(async () => {
-    const requestedId = contactIdRef.current;
-    const seq = ++reloadSeq.current;
-    const next = await fetchBundle(createClient(), requestedId);
-    if (seq !== reloadSeq.current || requestedId !== contactIdRef.current) return;
-    setBundle(next);
-    setMissing(false);
-    setLoadError(null);
-  }, []);
+    await invalidateCrm(queryClient);
+  }, [queryClient]);
 
   useEffect(() => {
-    let cancelled = false;
-    reloadSeq.current += 1;
-    setLoading(true);
-    setLoadError(null);
-    setMissing(false);
     setEditing(false);
     setHeatDraft(null);
     setStageDraft(null);
     setPositionError(null);
     setDeleteError(null);
     setConfirmingDelete(false);
+  }, [contactId]);
 
-    fetchBundle(createClient(), contactId)
-      .then((next) => {
-        if (cancelled) return;
-        setBundle(next);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setBundle(null);
-        if (error instanceof Error && error.name === "NotFound") {
-          setMissing(true);
-          return;
-        }
-        setLoadError(errorMessage(error));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [contactId, loadKey]);
+  const contact = contactQuery.data;
+  const history = historyQuery.data;
+  const tasks = tasksQuery.data;
+  const missing = contactQuery.error instanceof Error && contactQuery.error.name === "NotFound";
+  const loadErrorSource = [contactQuery.error, historyQuery.error, tasksQuery.error].find(
+    (error) => error && !(error instanceof Error && error.name === "NotFound"),
+  );
+  const loadError = loadErrorSource ? errorMessage(loadErrorSource) : null;
+  const loading =
+    !missing &&
+    !loadError &&
+    (contactQuery.isPending || historyQuery.isPending || tasksQuery.isPending);
 
   useEffect(() => {
-    if (!bundle) return;
+    if (!contact) return;
     const previous = document.title;
-    document.title = `${bundle.contact.name} · Trio CRM`;
+    document.title = `${contact.name} · Trio CRM`;
     return () => {
       document.title = previous;
     };
-  }, [bundle]);
+  }, [contact]);
 
   useEffect(() => {
-    if (!bundle) return;
+    if (!contact || !history) return;
     const hash = window.location.hash;
     if (!hash.startsWith("#history-") || openedHash.current === hash) return;
     const id = decodeURIComponent(hash.slice("#history-".length));
@@ -625,7 +585,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
     openedHash.current = hash;
     setHighlightId(id);
     setOpenRequest((current) => current + 1);
-  }, [bundle]);
+  }, [contact, history]);
 
   useEffect(() => {
     if (!highlightId) return;
@@ -646,7 +606,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   }
 
   async function saveHeat(next: Heat) {
-    const current = bundle?.contact;
+    const current = contact;
     if (!current || next === current.heat || savingPosition) return;
     setHeatDraft(next);
     setPositionError(null);
@@ -671,7 +631,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   }
 
   async function saveStage(next: Stage) {
-    const current = bundle?.contact;
+    const current = contact;
     if (!current || next === current.stage || savingPosition) return;
     setStageDraft(next);
     setPositionError(null);
@@ -706,13 +666,14 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   }, [confirmingDelete]);
 
   async function handleDelete() {
-    const current = bundle?.contact;
+    const current = contact;
     if (!current || deleting) return;
 
     setDeleteError(null);
     setDeleting(true);
     try {
       await deleteContact(createClient(), current.id);
+      await invalidateCrm(queryClient);
       router.push("/");
     } catch (error) {
       setDeleteError(errorMessage(error));
@@ -720,10 +681,10 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
     }
   }
 
-  if (!bundle || bundle.contact.id !== contactId) {
+  if (!contact || !history || !tasks || contact.id !== contactId) {
     if (!loading && missing) {
       return (
-        <section className="rounded-2xl border border-line bg-white p-6">
+        <section className="rounded-2xl border border-line/60 bg-white shadow-card p-6">
           <h1 className="text-xl font-semibold text-navy">Contact</h1>
           <p role="alert" className="mt-3 text-sm text-muted">
             This contact could not be found.
@@ -733,14 +694,18 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
     }
     if (!loading && loadError) {
       return (
-        <section className="rounded-2xl border border-line bg-white p-6">
+        <section className="rounded-2xl border border-line/60 bg-white shadow-card p-6">
           <h1 className="text-xl font-semibold text-navy">Contact</h1>
           <p role="alert" className="mt-3 text-sm text-danger">
             {loadError}
           </p>
           <button
             type="button"
-            onClick={() => setLoadKey((value) => value + 1)}
+            onClick={() => {
+              void contactQuery.refetch();
+              void historyQuery.refetch();
+              void tasksQuery.refetch();
+            }}
             className={`btn mt-4 inline-flex items-center justify-center ${secondaryButtonClass}`}
           >
             Try again
@@ -751,8 +716,6 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
     return <p className="text-sm text-muted">Loading contact…</p>;
   }
 
-  const { contact, history, tasks } = bundle;
-  const brand = business(contact.business);
   const chats = history
     .filter((entry) => entry.type === "chat" || entry.type === "note")
     .sort(compareNewest);
@@ -778,22 +741,12 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   return (
     <>
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)_minmax(0,1fr)]">
-        <section className="min-w-0 rounded-2xl border border-line bg-white p-5">
+        <section className="min-w-0 rounded-2xl border border-line/60 bg-white shadow-card p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span
-                className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold text-white"
-                style={{ backgroundColor: brand.color }}
-              >
-                {brand.name}
-              </span>
+              <BusinessPill id={contact.business} />
               {(contact.tags ?? []).map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex rounded-full bg-[#e8edf4] px-2.5 py-1 text-xs font-semibold text-muted"
-                >
-                  {tag}
-                </span>
+                <TagPill key={tag} tag={tag} />
               ))}
             </div>
             <button
@@ -887,7 +840,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
             }}
           />
 
-          <section className="rounded-2xl border border-line bg-white p-5">
+          <section className="rounded-2xl border border-line/60 bg-white shadow-card p-5">
             <h2 className="text-base font-semibold text-navy">Chat history ({chats.length})</h2>
             {chats.length === 0 ? (
               <p className="mt-3 text-sm text-muted">No chats or notes yet.</p>
@@ -945,7 +898,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
               </div>
             )}
 
-            <details className="mt-5 rounded-xl border border-line bg-page px-4 py-3">
+            <details className="mt-5 rounded-2xl border border-line/60 bg-page px-4 py-3">
               <summary className="min-h-11 cursor-pointer py-1 text-sm font-semibold text-navy md:min-h-0">
                 Other activity ({activity.length})
               </summary>
@@ -968,7 +921,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
         </div>
 
         <div className="min-w-0 space-y-6">
-          <section className="rounded-2xl border border-line bg-white p-5">
+          <section className="rounded-2xl border border-line/60 bg-white shadow-card p-5">
             <h2 className="text-base font-semibold text-navy">Lead position</h2>
             <div className="mt-4 space-y-4">
               <div>
@@ -1020,7 +973,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
             ) : null}
           </section>
 
-          <section className="rounded-2xl border border-line bg-white p-5">
+          <section className="rounded-2xl border border-line/60 bg-white shadow-card p-5">
             <h2 className="text-base font-semibold text-navy">Follow-ups ({pending.length})</h2>
             {pending.length === 0 ? (
               <p className="mt-3 text-sm text-muted">No open follow-ups.</p>
@@ -1079,7 +1032,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
         onClick={(event) => {
           if (event.target === event.currentTarget && !deleting) setConfirmingDelete(false);
         }}
-        className="m-auto w-[min(28rem,calc(100vw-2rem))] max-w-full rounded-2xl border border-line bg-white p-5 text-ink shadow-xl backdrop:bg-navy/40 md:p-6"
+        className="m-auto w-[min(28rem,calc(100vw-2rem))] max-w-full rounded-2xl border border-line/60 bg-white p-5 text-ink shadow-xl backdrop:bg-navy/40 md:p-6"
       >
         <h2 id="delete-contact-title" className="text-lg font-semibold text-navy">
           Delete {contact.name}?

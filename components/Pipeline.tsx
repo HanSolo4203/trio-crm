@@ -1,18 +1,21 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 
 import {
-  BUSINESSES,
-  business,
-  formatDate,
-  HEATS,
-  isOpenStage,
-  localDate,
-  stage,
-} from "@/lib/constants";
-import { createClient } from "@/lib/supabase/client";
+  BusinessPill,
+  BusinessSelectOptions,
+  StatusDot,
+  StatusPill,
+  TagPill,
+  statusPillClass,
+  tagPillStyle,
+} from "@/components/BusinessSettingsProvider";
+import { formatDate, HEATS, isOpenStage, localDate, stage } from "@/lib/constants";
+import { queryKeys } from "@/lib/queryKeys";
+import { fetchContacts } from "@/lib/queries";
 import type { Business, Contact } from "@/lib/types";
 
 type BusinessFilter = "all" | Business;
@@ -122,7 +125,6 @@ function LaneBoard({ children }: { children: ReactNode }) {
 }
 
 function LeadCard({ contact }: { contact: Contact }) {
-  const brand = business(contact.business);
   const stageStyle = stage(contact.stage);
   const place = placeLine(contact);
   const overdue = Boolean(contact.follow_up && contact.follow_up < localDate());
@@ -130,36 +132,22 @@ function LeadCard({ contact }: { contact: Contact }) {
   return (
     <Link
       href={`/contacts/${contact.id}`}
-      className="block min-h-11 rounded-xl border border-line bg-white p-3 transition-colors hover:border-navy/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+      className="block min-h-11 rounded-2xl border border-line/60 bg-white p-3 shadow-card transition-colors hover:border-navy/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
     >
       <p className="font-semibold text-navy">{contact.name}</p>
       {place ? <p className="mt-1 text-sm text-muted">{place}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        <span
-          className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold text-white"
-          style={{ backgroundColor: brand.color }}
-        >
-          {brand.name}
-        </span>
+        <BusinessPill id={contact.business} />
         {(contact.tags ?? []).slice(0, 3).map((tag) => (
-          <span
-            key={tag}
-            className="inline-flex rounded-full bg-[#e8edf4] px-2.5 py-1 text-xs font-semibold text-muted"
-          >
-            {tag}
-          </span>
+          <TagPill key={tag} tag={tag} />
         ))}
         {(contact.tags ?? []).length > 3 ? (
-          <span className="inline-flex rounded-full bg-[#e8edf4] px-2.5 py-1 text-xs font-semibold text-muted">
+          <span className={statusPillClass} style={tagPillStyle(null)}>
+            <StatusDot color={tagPillStyle(null).color} />
             +{(contact.tags ?? []).length - 3}
           </span>
         ) : null}
-        <span
-          className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
-          style={{ backgroundColor: stageStyle.bg, color: stageStyle.ink }}
-        >
-          {stageStyle.name}
-        </span>
+        <StatusPill label={stageStyle.name} bg={stageStyle.bg} ink={stageStyle.ink} />
       </div>
       <p className={`mt-3 text-xs font-semibold ${overdue ? "text-danger" : "text-muted"}`}>
         {dueLabel(contact.follow_up)}
@@ -171,42 +159,14 @@ function LeadCard({ contact }: { contact: Contact }) {
 export function Pipeline() {
   const filterId = useId();
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [loadKey, setLoadKey] = useState(0);
+  const contactsQuery = useQuery({
+    queryKey: queryKeys.contacts,
+    queryFn: fetchContacts,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-
-      const supabase = createClient();
-      const { data, error: queryError } = await supabase.from("crm_contacts").select("*");
-
-      if (cancelled) return;
-      if (queryError) {
-        setError(queryError.message);
-        setLoading(false);
-        return;
-      }
-
-      setContacts((data ?? []) as Contact[]);
-      setLoading(false);
-    }
-
-    load().catch((caught) => {
-      if (cancelled) return;
-      setError(errorMessage(caught));
-      setLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loadKey]);
+  const contacts = contactsQuery.data ?? [];
+  const loading = contactsQuery.isPending;
+  const error = contactsQuery.error ? errorMessage(contactsQuery.error) : null;
 
   const openContacts = contacts.filter((contact) => {
     if (!isOpenStage(contact.stage)) return false;
@@ -232,23 +192,21 @@ export function Pipeline() {
             className={controlClass}
           >
             <option value="all">All businesses</option>
-            {BUSINESSES.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
+            <BusinessSelectOptions />
           </select>
         </div>
       </div>
 
       {error ? (
-        <section className="mt-8 rounded-2xl border border-line bg-white p-6">
+        <section className="mt-8 rounded-2xl border border-line/60 bg-white shadow-card p-6">
           <p role="alert" className="text-sm text-danger">
             {error}
           </p>
           <button
             type="button"
-            onClick={() => setLoadKey((value) => value + 1)}
+            onClick={() => {
+              void contactsQuery.refetch();
+            }}
             className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
           >
             Try again

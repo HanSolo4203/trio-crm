@@ -1,12 +1,27 @@
 "use client";
 
-import { CalendarClock, GitBranch, LayoutDashboard, Search, Users, type LucideIcon } from "lucide-react";
+import {
+  CalendarClock,
+  GitBranch,
+  LayoutDashboard,
+  LogOut,
+  Search,
+  Settings,
+  Users,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
+import { UserAvatar } from "@/components/UserAvatar";
 import { localDate } from "@/lib/constants";
+import { queryKeys } from "@/lib/queryKeys";
+import { fetchTasks } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
+import { useProfile } from "@/lib/useProfile";
 
 const NAV: readonly {
   href: string;
@@ -17,6 +32,8 @@ const NAV: readonly {
   { href: "/", label: "Contacts", icon: Users },
   { href: "/followups", label: "Follow-ups", icon: CalendarClock },
   { href: "/pipeline", label: "Leads", icon: GitBranch },
+  { href: "/contractors", label: "Contractors", icon: Wrench },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -27,30 +44,22 @@ function isActive(pathname: string, href: string) {
 export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [dueCount, setDueCount] = useState<number | null>(null);
+  const { profile } = useProfile();
   const [signingOut, setSigningOut] = useState(false);
+  const { data: tasks } = useQuery({
+    queryKey: queryKeys.tasks,
+    queryFn: fetchTasks,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadDueCount() {
-      const supabase = createClient();
-      const { count, error } = await supabase
-        .from("crm_tasks")
-        .select("*", { count: "exact", head: true })
-        .is("done_at", null)
-        .lte("date", localDate());
-
-      if (cancelled || error) return;
-      setDueCount(count ?? 0);
-    }
-
-    loadDueCount();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname]);
+  const today = localDate();
+  const dueCount =
+    tasks == null
+      ? null
+      : tasks.filter((task) => {
+          if (task.done_at != null) return false;
+          const date = task.date?.trim() ?? "";
+          return date !== "" && date <= today;
+        }).length;
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -65,25 +74,28 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   }
 
   const showDue = dueCount != null && dueCount > 0;
+  const displayName = profile?.display_name?.trim() || "Account";
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-white/10 bg-navy px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-white md:hidden">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            aria-hidden="true"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-semibold tracking-wide text-mint"
-          >
-            DH
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-white px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-ink md:hidden">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <UserAvatar
+            displayName={profile?.display_name}
+            avatarUrl={profile?.avatar_url}
+            className="h-8 w-8 bg-navy text-xs text-mint"
+          />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{displayName}</p>
+            <p className="truncate text-xs text-muted">Trio CRM</p>
           </div>
-          <p className="truncate text-sm font-semibold">Dylan&apos;s CRM</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={onOpenSearch}
             aria-label="Search"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted transition-colors hover:bg-page hover:text-ink"
           >
             <Search aria-hidden="true" size={20} strokeWidth={1.75} />
           </button>
@@ -91,7 +103,8 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
             type="button"
             onClick={handleSignOut}
             disabled={signingOut}
-            className="btn-compact inline-flex shrink-0 items-center rounded-lg px-2 text-sm font-medium text-white/80 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label={signingOut ? "Signing out" : "Sign out"}
+            className="btn-compact inline-flex shrink-0 items-center rounded-lg px-2 text-sm font-medium text-muted transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
           >
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
@@ -100,7 +113,7 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
 
       <nav
         aria-label="Primary"
-        className="fixed bottom-0 inset-x-0 z-40 border-t border-white/10 bg-navy md:hidden"
+        className="fixed bottom-0 inset-x-0 z-40 border-t border-line bg-white md:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex">
@@ -112,14 +125,16 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[11px] font-medium leading-tight ${
-                  active ? "text-mint" : "text-white/70"
+                className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium leading-tight ${
+                  active ? "text-ink" : "text-muted"
                 }`}
               >
-                <span className="relative">
+                <span
+                  className={`relative rounded-lg px-2 py-0.5 ${active ? "bg-line" : ""}`}
+                >
                   <Icon aria-hidden="true" size={20} strokeWidth={1.75} />
                   {item.href === "/followups" && showDue ? (
-                    <span className="absolute -right-2.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-mint px-1 text-[10px] font-semibold tabular-nums leading-none text-navy">
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-navy px-1 text-[10px] font-semibold tabular-nums leading-none text-white">
                       {dueCount > 9 ? "9+" : dueCount}
                     </span>
                   ) : null}
@@ -131,26 +146,39 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
         </div>
       </nav>
 
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[234px] flex-col bg-navy text-white md:flex">
-        <div className="px-4 pt-6">
-          <div
-            aria-hidden="true"
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-sm font-semibold tracking-wide text-mint"
-          >
-            DH
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[234px] flex-col border-r border-line bg-white text-ink md:flex">
+        <div className="flex items-center gap-2.5 px-4 pt-5">
+          <UserAvatar
+            displayName={profile?.display_name}
+            avatarUrl={profile?.avatar_url}
+            className="h-8 w-8 bg-navy text-xs text-mint"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{displayName}</p>
+            <p className="truncate text-xs text-muted">Trio CRM</p>
           </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-label={signingOut ? "Signing out" : "Sign out"}
+            title={signingOut ? "Signing out" : "Sign out"}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-page hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <LogOut aria-hidden="true" size={16} strokeWidth={1.75} />
+          </button>
         </div>
 
-        <div className="px-3 pt-6">
+        <div className="px-3 pt-5">
           <button
             type="button"
             onClick={onOpenSearch}
             aria-keyshortcuts="Meta+K Control+K"
-            className="flex w-full items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-left text-sm text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex w-full items-center gap-2 rounded-lg border border-line bg-page px-3 py-2 text-left text-sm text-muted transition-colors hover:text-ink"
           >
             <Search aria-hidden="true" size={16} strokeWidth={1.75} />
             <span className="flex-1">Search</span>
-            <kbd className="rounded border border-white/20 px-1.5 py-0.5 text-[11px] font-medium text-white/50">
+            <kbd className="rounded border border-line bg-white px-1.5 py-0.5 text-[11px] font-medium text-muted">
               ⌘K
             </kbd>
           </button>
@@ -159,20 +187,20 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
         <nav aria-label="Primary" className="mt-4 flex flex-1 flex-col gap-1 overflow-y-auto px-3">
           {NAV.map((item) => {
             const active = isActive(pathname, item.href);
+            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-white/10 text-white"
-                    : "text-white/70 hover:bg-white/10 hover:text-white"
+                  active ? "bg-line text-ink" : "text-muted hover:bg-page hover:text-ink"
                 }`}
               >
-                <span>{item.label}</span>
+                <Icon aria-hidden="true" size={16} strokeWidth={1.75} />
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 {item.href === "/followups" && showDue ? (
-                  <span className="ml-auto min-w-5 rounded-full bg-mint px-1.5 text-center text-xs font-semibold tabular-nums text-navy">
+                  <span className="ml-auto min-w-5 rounded-full bg-navy px-1.5 text-center text-xs font-semibold tabular-nums text-white">
                     {dueCount}
                   </span>
                 ) : null}
@@ -180,17 +208,6 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
             );
           })}
         </nav>
-
-        <div className="p-3">
-          <button
-            type="button"
-            onClick={handleSignOut}
-            disabled={signingOut}
-            className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {signingOut ? "Signing out…" : "Sign out"}
-          </button>
-        </div>
       </aside>
     </>
   );

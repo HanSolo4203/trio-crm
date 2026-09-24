@@ -39,6 +39,12 @@ function todayInBlantyre() {
   }).format(new Date());
 }
 
+// digest_send_hour_local is the Africa/Blantyre wall-clock hour (UTC+2).
+// UTC hour = local − 2, wrapped into 0–23. Do not add 2 here.
+function utcHourFromLocal(localHour: number) {
+  return (localHour - 2 + 24) % 24;
+}
+
 function daysBetween(earlier: string, later: string) {
   const [yearA, monthA, dayA] = earlier.split("-").map(Number);
   const [yearB, monthB, dayB] = later.split("-").map(Number);
@@ -101,9 +107,7 @@ export async function GET(request: Request) {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const resendKey = process.env.RESEND_API_KEY;
-  const digestTo = process.env.DIGEST_EMAIL_TO;
-  if (!supabaseUrl || !serviceRoleKey || !resendKey || !digestTo) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return new Response("Digest is not configured.", { status: 500 });
   }
 
@@ -111,7 +115,39 @@ export async function GET(request: Request) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  const { data: settings, error: settingsError } = await supabase
+    .from("crm_app_settings")
+    .select("digest_enabled, digest_recipient_email, digest_send_hour_local, last_sent_date")
+    .eq("id", true)
+    .maybeSingle();
+
+  if (settingsError || !settings) {
+    return new Response(
+      `Could not load digest settings: ${settingsError?.message ?? "missing row"}`,
+      { status: 500 },
+    );
+  }
+
+  if (!settings.digest_enabled) {
+    return new Response("Digest is disabled.", { status: 200 });
+  }
+
   const today = todayInBlantyre();
+  if (settings.last_sent_date === today) {
+    return new Response("Already sent today.", { status: 200 });
+  }
+
+  if (new Date().getUTCHours() !== utcHourFromLocal(settings.digest_send_hour_local)) {
+    return new Response("Not the scheduled hour yet.", { status: 200 });
+  }
+
+  const recipient = settings.digest_recipient_email?.trim() || null;
+  const digestTo = recipient || process.env.DIGEST_EMAIL_TO;
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey || !digestTo) {
+    return new Response("Digest is not configured.", { status: 500 });
+  }
+
   const { data, error } = await supabase
     .from("crm_tasks")
     .select("text, date, contact_id, crm_contacts(id, name)")
@@ -156,6 +192,18 @@ export async function GET(request: Request) {
 
   if (sendError) {
     return new Response(`Email failed: ${sendError.message}`, { status: 500 });
+  }
+
+  const { error: sentError } = await supabase
+    .from("crm_app_settings")
+    .update({ last_sent_date: today })
+    .eq("id", true);
+
+  if (sentError) {
+    return new Response(
+      `Sent "${subject}" to ${digestTo}, but could not record last_sent_date: ${sentError.message}`,
+      { status: 500 },
+    );
   }
 
   return new Response(

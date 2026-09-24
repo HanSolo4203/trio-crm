@@ -13,7 +13,15 @@ import {
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { BUSINESSES, HEATS, STAGES, business } from "@/lib/constants";
+import {
+  BusinessSelectOptions,
+  StatusDot,
+  statusPillClass,
+  tagPillStyle,
+  useBusinessDisplay,
+  useTagColors,
+} from "@/components/BusinessSettingsProvider";
+import { HEATS, STAGES } from "@/lib/constants";
 import { createContact, updateContact, type ContactExtras } from "@/lib/crm";
 import { createClient } from "@/lib/supabase/client";
 import type { Business, CommissionStatus, Contact, Heat, Stage } from "@/lib/types";
@@ -30,7 +38,7 @@ type ContactFormDialogProps = {
 type DuplicateMatch = {
   id: string;
   name: string;
-  businessName: string;
+  business: Business;
   matchedOn: "phone" | "email" | "both";
 };
 
@@ -195,7 +203,7 @@ function toDuplicateMatch(
   return {
     id: contact.id,
     name: contact.name,
-    businessName: business(contact.business).name,
+    business: contact.business,
     matchedOn,
   };
 }
@@ -252,6 +260,7 @@ export function ContactFormDialog({
   const followUpErrorId = `${formId}-follow-up-error`;
   const formErrorId = `${formId}-form-error`;
 
+  const tagColors = useTagColors();
   const [form, setForm] = useState<FormState>(() => emptyForm(defaultBusiness));
   const [tagDraft, setTagDraft] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
@@ -264,6 +273,7 @@ export function ContactFormDialog({
   const [prevEditingId, setPrevEditingId] = useState<string | null>(null);
 
   const editingId = editingContact?.id ?? null;
+  const duplicateBusiness = useBusinessDisplay(duplicate?.business ?? "right-stay");
 
   if (open !== prevOpen || editingId !== prevEditingId) {
     setPrevOpen(open);
@@ -514,11 +524,7 @@ export function ContactFormDialog({
                   }
                   className={controlClass}
                 >
-                  {BUSINESSES.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
+                  <BusinessSelectOptions />
                 </select>
               </Field>
 
@@ -603,8 +609,10 @@ export function ContactFormDialog({
                 {form.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 rounded-full bg-[#e8edf4] py-1 pl-2.5 pr-1 text-xs font-semibold text-muted"
+                    className={`${statusPillClass} gap-1 py-0.5 pl-2 pr-1`}
+                    style={tagPillStyle(tagColors[tag])}
                   >
+                    <StatusDot color={tagPillStyle(tagColors[tag]).color} />
                     {tag}
                     <button
                       type="button"
@@ -809,7 +817,7 @@ export function ContactFormDialog({
             >
               <p>
                 A contact with this {duplicateLabel(duplicate.matchedOn)} already exists:{" "}
-                {duplicate.name} ({duplicate.businessName}).
+                {duplicate.name} ({duplicateBusiness.name}).
               </p>
               <button
                 type="button"
@@ -843,7 +851,7 @@ export function ContactFormDialog({
             <button
               type="submit"
               disabled={submitting}
-              className="btn inline-flex w-full items-center justify-center rounded-lg bg-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+              className="btn btn-primary inline-flex w-full items-center justify-center rounded-full bg-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
             >
               {submitting
                 ? "Saving…"

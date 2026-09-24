@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
+import { BusinessSettingsProvider } from "@/components/BusinessSettingsProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Sidebar } from "@/components/Sidebar";
 
@@ -9,7 +10,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
-    <>
+    <BusinessSettingsProvider>
       <Sidebar onOpenSearch={() => setSearchOpen(true)} />
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <div className="min-h-screen min-w-0 max-w-full overflow-x-clip md:pl-[234px]">
@@ -17,6 +18,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
-    </>
+    </BusinessSettingsProvider>
   );
 }

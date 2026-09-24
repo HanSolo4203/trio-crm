@@ -20,7 +20,7 @@ function safeNextPath(value: string | null) {
 function LoginCard({ children }: { children: React.ReactNode }) {
   return (
     <main className="flex min-h-screen items-center justify-center overflow-x-clip px-4 py-8">
-      <section className="w-full min-w-0 max-w-md rounded-2xl border border-line bg-white p-6 md:p-8">
+      <section className="w-full min-w-0 max-w-md rounded-2xl border border-line/60 bg-white shadow-card p-6 md:p-8">
         <div
           aria-hidden="true"
           className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy text-sm font-semibold tracking-wide text-mint"
@@ -112,7 +112,7 @@ function LoginForm() {
         <button
           type="submit"
           disabled={submitting}
-          className="btn inline-flex w-full items-center justify-center rounded-lg bg-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn btn-primary inline-flex w-full items-center justify-center rounded-full bg-navy px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Signing in…" : "Sign in"}
         </button>

@@ -1,10 +1,14 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
-import { BUSINESSES, business, formatDate, formatTimestamp, localDate } from "@/lib/constants";
+import { BusinessSelectOptions, useBusinessDisplay } from "@/components/BusinessSettingsProvider";
+import { formatDate, formatTimestamp, localDate } from "@/lib/constants";
 import { completeFollowup } from "@/lib/crm";
+import { queryKeys } from "@/lib/queryKeys";
+import { fetchContacts, fetchHistory, fetchTasks, invalidateCrm } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
 import type { Business, Contact, HistoryEntry, Task } from "@/lib/types";
 
@@ -20,7 +24,7 @@ const controlClass =
   "input mt-1.5 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:min-w-52";
 
 const primaryButtonClass =
-  "btn inline-flex items-center justify-center rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60";
+  "btn btn-primary inline-flex items-center justify-center rounded-full bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButtonClass =
   "btn-compact inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page";
@@ -54,9 +58,10 @@ function chatDateLabel(entry: HistoryEntry) {
   return formatDate(entry.date) || formatDate(entry.at);
 }
 
-function clientSubline(contact: Contact) {
+function ClientSubline({ contact }: { contact: Contact }) {
+  const { name } = useBusinessDisplay(contact.business);
   const company = contact.company?.trim() ?? "";
-  return company ? `${business(contact.business).name} · ${company}` : business(contact.business).name;
+  return company ? `${name} · ${company}` : name;
 }
 
 function comparePending(a: FollowupRow, b: FollowupRow) {
@@ -84,7 +89,9 @@ function ClientCell({ contact }: { contact: Contact }) {
       className="block min-h-11 min-w-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
     >
       <p className="font-semibold text-navy">{contact.name}</p>
-      <p className="mt-0.5 text-sm text-muted">{clientSubline(contact)}</p>
+      <p className="mt-0.5 text-sm text-muted">
+        <ClientSubline contact={contact} />
+      </p>
     </Link>
   );
 }
@@ -130,7 +137,7 @@ function FollowupCard({
   const action = row.task.text.trim() || "Follow-up";
 
   return (
-    <article className="rounded-xl border border-line bg-white p-4">
+    <article className="rounded-2xl border border-line/60 bg-white p-4 shadow-card">
       <p className={`text-sm font-semibold ${overdue ? "text-danger" : "text-ink"}`}>
         {dueLabel(row.task.date)}
       </p>
@@ -139,7 +146,9 @@ function FollowupCard({
         className="mt-2 block min-h-11 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
       >
         <span className="font-semibold text-navy">{row.contact.name}</span>
-        <span className="mt-0.5 block text-sm text-muted">{clientSubline(row.contact)}</span>
+        <span className="mt-0.5 block text-sm text-muted">
+          <ClientSubline contact={row.contact} />
+        </span>
       </Link>
       <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{action}</p>
       {chat ? (
@@ -276,66 +285,28 @@ function FollowupTable({
 
 export function Followups() {
   const filterId = useId();
+  const queryClient = useQueryClient();
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [loadKey, setLoadKey] = useState(0);
   const [completingId, setCompletingId] = useState<string | null>(null);
-  const hasLoaded = useRef(false);
   const completingRef = useRef(false);
+  const tasksQuery = useQuery({ queryKey: queryKeys.tasks, queryFn: fetchTasks });
+  const contactsQuery = useQuery({ queryKey: queryKeys.contacts, queryFn: fetchContacts });
+  const historyQuery = useQuery({ queryKey: queryKeys.history, queryFn: fetchHistory });
 
-  useEffect(() => {
-    let cancelled = false;
+  const tasks = tasksQuery.data ?? [];
+  const contacts = contactsQuery.data ?? [];
+  const history = historyQuery.data ?? [];
+  const loaded = Boolean(tasksQuery.data && contactsQuery.data && historyQuery.data);
+  const loadErrorSource = tasksQuery.error ?? contactsQuery.error ?? historyQuery.error;
+  const loadError = loadErrorSource ? errorMessage(loadErrorSource) : null;
+  const loading = !loaded && !loadError && (tasksQuery.isPending || contactsQuery.isPending || historyQuery.isPending);
 
-    async function load() {
-      if (!hasLoaded.current) setLoading(true);
-      setLoadError(null);
-
-      const supabase = createClient();
-      const [tasksResult, contactsResult, historyResult] = await Promise.all([
-        supabase.from("crm_tasks").select("*"),
-        supabase.from("crm_contacts").select("*"),
-        supabase.from("crm_history").select("*"),
-      ]);
-
-      if (cancelled) return;
-
-      const queryError = tasksResult.error ?? contactsResult.error ?? historyResult.error;
-      if (queryError) {
-        setLoadError(queryError.message);
-        setLoading(false);
-        completingRef.current = false;
-        setCompletingId(null);
-        return;
-      }
-
-      setTasks((tasksResult.data ?? []) as Task[]);
-      setContacts((contactsResult.data ?? []) as Contact[]);
-      setHistory((historyResult.data ?? []) as HistoryEntry[]);
-      hasLoaded.current = true;
-      setLoaded(true);
-      setLoading(false);
-      completingRef.current = false;
-      setCompletingId(null);
-    }
-
-    load().catch((caught) => {
-      if (cancelled) return;
-      setLoadError(errorMessage(caught));
-      setLoading(false);
-      completingRef.current = false;
-      setCompletingId(null);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loadKey]);
+  function retry() {
+    void tasksQuery.refetch();
+    void contactsQuery.refetch();
+    void historyQuery.refetch();
+  }
 
   async function handleComplete(row: FollowupRow) {
     if (completingRef.current) return;
@@ -350,10 +321,11 @@ export function Followups() {
         row.task.text,
         row.task.date,
       );
-      setLoadKey((value) => value + 1);
+      await invalidateCrm(queryClient);
     } catch (caught) {
-      completingRef.current = false;
       setActionError(errorMessage(caught));
+    } finally {
+      completingRef.current = false;
       setCompletingId(null);
     }
   }
@@ -390,23 +362,19 @@ export function Followups() {
             className={controlClass}
           >
             <option value="all">All businesses</option>
-            {BUSINESSES.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
+            <BusinessSelectOptions />
           </select>
         </div>
       </div>
 
       {loadError && !loaded ? (
-        <section className="mt-8 rounded-2xl border border-line bg-white p-6">
+        <section className="mt-8 rounded-2xl border border-line/60 bg-white shadow-card p-6">
           <p role="alert" className="text-sm text-danger">
             {loadError}
           </p>
           <button
             type="button"
-            onClick={() => setLoadKey((value) => value + 1)}
+            onClick={retry}
             className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
           >
             Try again
@@ -417,13 +385,13 @@ export function Followups() {
       ) : (
         <>
           {loadError ? (
-            <section className="mt-8 rounded-2xl border border-line bg-white p-6">
+            <section className="mt-8 rounded-2xl border border-line/60 bg-white shadow-card p-6">
               <p role="alert" className="text-sm text-danger">
                 {loadError}
               </p>
               <button
                 type="button"
-                onClick={() => setLoadKey((value) => value + 1)}
+                onClick={retry}
                 className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
               >
                 Try again
@@ -438,14 +406,14 @@ export function Followups() {
           ) : null}
 
           {pending.length === 0 ? (
-            <section className="mt-8 rounded-2xl border border-line bg-white px-6 py-16 text-center">
+            <section className="mt-8 rounded-2xl border border-line/60 bg-white shadow-card px-6 py-16 text-center">
               <p className="text-sm text-muted">No pending follow-ups</p>
               <Link href="/" className={`mt-4 inline-flex ${primaryButtonClass}`}>
                 View contacts
               </Link>
             </section>
           ) : (
-            <section className="mt-8 md:overflow-hidden md:rounded-2xl md:border md:border-line md:bg-white">
+            <section className="mt-8 md:overflow-hidden md:rounded-2xl md:border md:border-line/60 md:bg-white md:shadow-card">
               <FollowupTable
                 rows={pending}
                 mode="pending"
@@ -457,7 +425,7 @@ export function Followups() {
             </section>
           )}
 
-          <details className="mt-8 rounded-2xl border border-line bg-white">
+          <details className="mt-8 rounded-2xl border border-line/60 bg-white shadow-card">
             <summary className="min-h-11 cursor-pointer px-4 py-4 text-sm font-semibold text-navy">
               Completed follow-up log ({completed.length})
             </summary>

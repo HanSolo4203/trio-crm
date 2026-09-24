@@ -1,18 +1,25 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 
-import { ContactFormDialog } from "@/components/ContactFormDialog";
 import {
-  BUSINESSES,
-  business,
-  formatDate,
-  heat,
-  localDate,
-  stage,
-} from "@/lib/constants";
-import { createClient } from "@/lib/supabase/client";
+  BusinessMark,
+  BusinessPill,
+  BusinessSelectOptions,
+  StatusDot,
+  StatusPill,
+  TagPill,
+  statusPillClass,
+  tagPillStyle,
+  useBusinessDisplay,
+  useTagColors,
+} from "@/components/BusinessSettingsProvider";
+import { ContactFormDialog } from "@/components/ContactFormDialog";
+import { BUSINESSES, formatDate, heat, localDate, stage } from "@/lib/constants";
+import { queryKeys } from "@/lib/queryKeys";
+import { fetchContacts, invalidateCrm } from "@/lib/queries";
 import type { Business, Contact } from "@/lib/types";
 
 type BusinessFilter = "all" | Business;
@@ -21,7 +28,7 @@ const controlClass =
   "input mt-1.5 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:min-w-52";
 
 const primaryButtonClass =
-  "btn inline-flex items-center justify-center rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink";
+  "btn btn-primary inline-flex items-center justify-center rounded-full bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-ink";
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message
@@ -47,8 +54,7 @@ function compareContacts(a: Contact, b: Contact) {
   return a.name.localeCompare(b.name);
 }
 
-const tagPillClass =
-  "inline-flex rounded-full bg-[#e8edf4] px-2.5 py-1 text-xs font-semibold text-muted";
+const tagPillClass = statusPillClass;
 
 function TagPills({ tags, limit }: { tags: string[] | null | undefined; limit?: number }) {
   const list = tags ?? [];
@@ -58,11 +64,14 @@ function TagPills({ tags, limit }: { tags: string[] | null | undefined; limit?: 
   return (
     <>
       {shown.map((tag) => (
-        <span key={tag} className={tagPillClass}>
-          {tag}
-        </span>
+        <TagPill key={tag} tag={tag} />
       ))}
-      {extra > 0 ? <span className={tagPillClass}>+{extra}</span> : null}
+      {extra > 0 ? (
+        <span className={tagPillClass} style={tagPillStyle(null)}>
+          <StatusDot color={tagPillStyle(null).color} />
+          +{extra}
+        </span>
+      ) : null}
     </>
   );
 }
@@ -84,7 +93,7 @@ function tagsByFrequency(contacts: Contact[]) {
 }
 
 function ContactRow({ contact }: { contact: Contact }) {
-  const brand = business(contact.business);
+  const brand = useBusinessDisplay(contact.business);
   const heatStyle = heat(contact.heat);
   const stageStyle = stage(contact.stage);
   const place = placeLine(contact);
@@ -95,26 +104,22 @@ function ContactRow({ contact }: { contact: Contact }) {
     <li>
       <Link
         href={`/contacts/${contact.id}`}
-        className="block rounded-xl border border-line bg-white p-4 transition-colors hover:border-navy/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] md:items-center md:gap-6 md:rounded-none md:border-0 md:bg-transparent md:px-4 md:py-4 md:hover:border-transparent md:hover:bg-page"
+        className="block rounded-2xl border border-line/60 bg-white p-4 shadow-card transition-colors hover:border-navy/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] md:items-center md:gap-6 md:rounded-none md:border-0 md:bg-transparent md:px-4 md:py-4 md:shadow-none md:hover:border-transparent md:hover:bg-page"
       >
         <div className="md:hidden">
           <p className="font-semibold text-navy">{contact.name}</p>
           <p className="mt-0.5 text-sm text-muted">{place || "No company or location"}</p>
           <div className="mt-3 flex items-center justify-between gap-3">
             <span className="inline-flex min-w-0 items-center gap-2 text-sm text-ink">
-              <span
-                aria-hidden="true"
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: brand.color }}
-              />
+              <BusinessMark id={contact.business} />
               <span className="truncate">{brand.name}</span>
             </span>
-            <span
-              className="inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
-              style={{ backgroundColor: heatStyle.bg, color: heatStyle.ink }}
-            >
-              {heatStyle.name}
-            </span>
+            <StatusPill
+              className="shrink-0"
+              label={heatStyle.name}
+              bg={heatStyle.bg}
+              ink={heatStyle.ink}
+            />
           </div>
           {(contact.tags ?? []).length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-2">
@@ -137,25 +142,10 @@ function ContactRow({ contact }: { contact: Contact }) {
           </p>
         </div>
         <div className="hidden flex-wrap gap-2 md:flex">
-          <span
-            className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold text-white"
-            style={{ backgroundColor: brand.color }}
-          >
-            {brand.name}
-          </span>
+          <BusinessPill id={contact.business} />
           <TagPills tags={contact.tags} limit={3} />
-          <span
-            className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
-            style={{ backgroundColor: heatStyle.bg, color: heatStyle.ink }}
-          >
-            {heatStyle.name}
-          </span>
-          <span
-            className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
-            style={{ backgroundColor: stageStyle.bg, color: stageStyle.ink }}
-          >
-            {stageStyle.name}
-          </span>
+          <StatusPill label={heatStyle.name} bg={heatStyle.bg} ink={heatStyle.ink} />
+          <StatusPill label={stageStyle.name} bg={stageStyle.bg} ink={stageStyle.ink} />
         </div>
       </Link>
     </li>
@@ -164,45 +154,19 @@ function ContactRow({ contact }: { contact: Contact }) {
 
 export function Contacts() {
   const filterId = useId();
+  const queryClient = useQueryClient();
+  const tagColors = useTagColors();
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [loadKey, setLoadKey] = useState(0);
   const [adding, setAdding] = useState(false);
+  const contactsQuery = useQuery({
+    queryKey: queryKeys.contacts,
+    queryFn: fetchContacts,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-
-      const supabase = createClient();
-      const { data, error: queryError } = await supabase.from("crm_contacts").select("*");
-
-      if (cancelled) return;
-      if (queryError) {
-        setError(queryError.message);
-        setLoading(false);
-        return;
-      }
-
-      setContacts((data ?? []) as Contact[]);
-      setLoading(false);
-    }
-
-    load().catch((caught) => {
-      if (cancelled) return;
-      setError(errorMessage(caught));
-      setLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loadKey]);
+  const contacts = contactsQuery.data ?? [];
+  const loading = contactsQuery.isPending;
+  const error = contactsQuery.error ? errorMessage(contactsQuery.error) : null;
 
   const tagChoices = tagsByFrequency(contacts);
   const visible = contacts
@@ -242,11 +206,7 @@ export function Contacts() {
               className={controlClass}
             >
               <option value="all">All businesses</option>
-              {BUSINESSES.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
+              <BusinessSelectOptions />
             </select>
           </div>
           <button type="button" onClick={() => setAdding(true)} className={`${primaryButtonClass} w-full md:w-auto`}>
@@ -267,10 +227,12 @@ export function Contacts() {
                 onClick={() => toggleTag(tag)}
                 className={
                   active
-                    ? "inline-flex rounded-full bg-navy px-2.5 py-1 text-xs font-semibold text-white"
+                    ? `${tagPillClass} bg-navy text-white`
                     : tagPillClass
                 }
+                style={active ? undefined : tagPillStyle(tagColors[tag])}
               >
+                <StatusDot color={active ? "#ffffff" : tagPillStyle(tagColors[tag]).color} />
                 {tag}
               </button>
             );
@@ -279,13 +241,15 @@ export function Contacts() {
       ) : null}
 
       {error ? (
-        <section className="mt-8 rounded-2xl border border-line bg-white p-6">
+        <section className="mt-8 rounded-2xl border border-line/60 bg-white p-6 shadow-card">
           <p role="alert" className="text-sm text-danger">
             {error}
           </p>
           <button
             type="button"
-            onClick={() => setLoadKey((value) => value + 1)}
+            onClick={() => {
+              void contactsQuery.refetch();
+            }}
             className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
           >
             Try again
@@ -294,7 +258,7 @@ export function Contacts() {
       ) : loading ? (
         <p className="mt-8 text-sm text-muted">Loading contacts…</p>
       ) : visible.length === 0 ? (
-        <section className="mt-8 rounded-2xl border border-line bg-white px-6 py-16 text-center">
+        <section className="mt-8 rounded-2xl border border-line/60 bg-white px-6 py-16 text-center shadow-card">
           <p className="text-sm text-muted">
             {contacts.length === 0
               ? "No contacts yet."
@@ -307,7 +271,7 @@ export function Contacts() {
           </button>
         </section>
       ) : (
-        <ul className="mt-8 flex flex-col gap-3 md:block md:divide-y md:divide-line md:gap-0 md:overflow-hidden md:rounded-2xl md:border md:border-line md:bg-white">
+        <ul className="mt-8 flex flex-col gap-3 md:block md:divide-y md:divide-line md:gap-0 md:overflow-hidden md:rounded-2xl md:border md:border-line/60 md:bg-white md:shadow-card">
           {visible.map((contact) => (
             <ContactRow key={contact.id} contact={contact} />
           ))}
@@ -317,7 +281,9 @@ export function Contacts() {
       <ContactFormDialog
         open={adding}
         onClose={() => setAdding(false)}
-        onSaved={() => setLoadKey((value) => value + 1)}
+        onSaved={() => {
+          void invalidateCrm(queryClient);
+        }}
         editingContact={null}
         defaultBusiness={defaultBusiness}
         contacts={loading || error ? undefined : contacts}

@@ -1,7 +1,8 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -16,17 +17,13 @@ import {
 } from "recharts";
 
 import { AppShell } from "@/components/AppShell";
+import { BusinessSelectOptions, useBusinessDisplay } from "@/components/BusinessSettingsProvider";
 import { BUSINESSES, formatRand, HEATS, isOpenStage, localDate, stage } from "@/lib/constants";
-import { createClient } from "@/lib/supabase/client";
-import type { Business, Contact, HistoryEntry, Stage, Task } from "@/lib/types";
+import { queryKeys } from "@/lib/queryKeys";
+import { fetchContacts, fetchHistory, fetchTasks } from "@/lib/queries";
+import type { Business, Contact, Stage, Task } from "@/lib/types";
 
 type BusinessFilter = "all" | Business;
-
-type DashboardData = {
-  contacts: Contact[];
-  tasks: Task[];
-  history: HistoryEntry[];
-};
 
 type BarDatum = {
   key: string;
@@ -172,16 +169,18 @@ function StatTile({
   valueClassName?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-line bg-white p-5">
+    <div className="min-w-0 rounded-2xl border border-line/60 bg-white px-4 py-3 shadow-card">
       <p className="text-sm text-muted">{label}</p>
-      <p className={`mt-2 text-3xl font-semibold tabular-nums ${valueClassName ?? ""}`}>{value}</p>
+      <p className={`mt-1 text-3xl font-semibold tabular-nums leading-none ${valueClassName ?? ""}`}>
+        {value}
+      </p>
     </div>
   );
 }
 
 function ChartCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="min-w-0 rounded-xl border border-line bg-white p-4 md:p-5">
+    <section className="min-w-0 rounded-2xl border border-line/60 bg-white p-4 shadow-card md:p-5">
       <h2 className="text-base font-semibold text-navy">{title}</h2>
       <div className="mt-4 h-[220px] md:h-72">{children}</div>
     </section>
@@ -277,7 +276,7 @@ function ReferralCommissions({ contacts }: { contacts: Contact[] }) {
     .reduce((sum, contact) => sum + commissionAmount(contact.commission_amount), 0);
 
   return (
-    <section className="mt-4 min-w-0 rounded-xl border border-line bg-white p-4 md:p-5">
+    <section className="mt-4 min-w-0 rounded-2xl border border-line/60 bg-white p-4 shadow-card md:p-5">
       <h2 className="text-base font-semibold text-navy">Referral commissions</h2>
       <div className="mt-4 min-w-0 max-w-full overflow-x-auto">
         <table className="w-full min-w-[36rem] text-left text-sm">
@@ -334,62 +333,34 @@ function ReferralCommissions({ contacts }: { contacts: Contact[] }) {
   );
 }
 
-export default function DashboardPage() {
+function Dashboard() {
   const filterId = useId();
   const phone = usePhone();
   const axisTick = { fill: "#56677f", fontSize: phone ? 10 : 12 };
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
-  const [data, setData] = useState<DashboardData>({ contacts: [], tasks: [], history: [] });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [loadKey, setLoadKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-
-      const supabase = createClient();
-      const [contactsResult, tasksResult, historyResult] = await Promise.all([
-        supabase.from("crm_contacts").select("*"),
-        supabase.from("crm_tasks").select("*"),
-        supabase.from("crm_history").select("*"),
-      ]);
-
-      if (cancelled) return;
-
-      const queryError = contactsResult.error ?? tasksResult.error ?? historyResult.error;
-      if (queryError) {
-        setError(queryError.message);
-        setLoading(false);
-        return;
-      }
-
-      setData({
-        contacts: (contactsResult.data ?? []) as Contact[],
-        tasks: (tasksResult.data ?? []) as Task[],
-        history: (historyResult.data ?? []) as HistoryEntry[],
-      });
-      setLoading(false);
-    }
-
-    load().catch((caught) => {
-      if (cancelled) return;
-      setError(errorMessage(caught));
-      setLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loadKey]);
+  const contactsQuery = useQuery({ queryKey: queryKeys.contacts, queryFn: fetchContacts });
+  const tasksQuery = useQuery({ queryKey: queryKeys.tasks, queryFn: fetchTasks });
+  const historyQuery = useQuery({ queryKey: queryKeys.history, queryFn: fetchHistory });
+  const contacts = contactsQuery.data ?? [];
+  const tasks = tasksQuery.data ?? [];
+  const loaded = Boolean(contactsQuery.data && tasksQuery.data && historyQuery.data);
+  const errorSource = contactsQuery.error ?? tasksQuery.error ?? historyQuery.error;
+  const error = errorSource ? errorMessage(errorSource) : null;
+  const loading =
+    !loaded && !error && (contactsQuery.isPending || tasksQuery.isPending || historyQuery.isPending);
+  const rightStay = useBusinessDisplay("right-stay");
+  const rslExpress = useBusinessDisplay("rsl-express");
+  const storey = useBusinessDisplay("storey");
+  const businessDisplay = {
+    "right-stay": rightStay,
+    "rsl-express": rslExpress,
+    storey,
+  };
 
   const today = localDate();
-  const scopedContacts = data.contacts.filter((contact) => matchesBusiness(contact, businessFilter));
+  const scopedContacts = contacts.filter((contact) => matchesBusiness(contact, businessFilter));
   const scopedIds = new Set(scopedContacts.map((contact) => contact.id));
-  const pendingTasks = data.tasks.filter(
+  const pendingTasks = tasks.filter(
     (task) => task.done_at == null && scopedIds.has(task.contact_id),
   );
 
@@ -431,15 +402,15 @@ export default function DashboardPage() {
 
   const businesses: BarDatum[] = BUSINESSES.map((item) => ({
     key: item.id,
-    name: item.name,
-    count: data.contacts.filter((contact) => contact.business === item.id).length,
-    fill: item.color,
+    name: businessDisplay[item.id].name,
+    count: contacts.filter((contact) => contact.business === item.id).length,
+    fill: businessDisplay[item.id].color,
   }));
 
   const months = recentMonths(scopedContacts);
 
   return (
-    <AppShell>
+    <>
           <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end md:justify-between">
             <div>
               <p className="text-sm font-medium text-blue">Trio CRM</p>
@@ -456,23 +427,23 @@ export default function DashboardPage() {
                 className={controlClass}
               >
                 <option value="all">All businesses</option>
-                {BUSINESSES.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
+                <BusinessSelectOptions />
               </select>
             </div>
           </div>
 
           {error ? (
-            <section className="mt-8 rounded-2xl border border-line bg-white p-6">
+            <section className="mt-8 rounded-2xl border border-line/60 bg-white p-6 shadow-card">
               <p role="alert" className="text-sm text-danger">
                 {error}
               </p>
               <button
                 type="button"
-                onClick={() => setLoadKey((value) => value + 1)}
+                onClick={() => {
+                  void contactsQuery.refetch();
+                  void tasksQuery.refetch();
+                  void historyQuery.refetch();
+                }}
                 className="btn mt-4 inline-flex items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-page"
               >
                 Try again
@@ -575,6 +546,14 @@ export default function DashboardPage() {
               ) : null}
             </>
           )}
+    </>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <AppShell>
+      <Dashboard />
     </AppShell>
   );
 }
