@@ -7,6 +7,7 @@ import { useId, useState } from "react";
 import {
   BusinessMark,
   BusinessPill,
+  useReportBusinessScope,
   BusinessSelectOptions,
   StatusDot,
   StatusPill,
@@ -157,6 +158,7 @@ export function Contacts() {
   const queryClient = useQueryClient();
   const tagColors = useTagColors();
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
+  useReportBusinessScope(businessFilter);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const contactsQuery = useQuery({

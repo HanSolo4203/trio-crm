@@ -25,6 +25,8 @@ import { HEATS, STAGES } from "@/lib/constants";
 import { createContact, updateContact, type ContactExtras } from "@/lib/crm";
 import { createClient } from "@/lib/supabase/client";
 import type { Business, CommissionStatus, Contact, Heat, Stage } from "@/lib/types";
+import { useProfile } from "@/lib/useProfile";
+import { profileName, useProfilesMap } from "@/lib/useProfilesMap";
 
 type ContactFormDialogProps = {
   open: boolean;
@@ -61,13 +63,14 @@ type FormState = {
   tags: string[];
   followUpText: string;
   followUpDate: string;
+  followUpAssignee: string;
   note: string;
 };
 
 const controlClass =
   "input mt-1.5 w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 placeholder:text-muted/70 focus:border-navy focus:ring-2";
 
-function emptyForm(business: Business): FormState {
+function emptyForm(business: Business, assigneeId = ""): FormState {
   return {
     name: "",
     company: "",
@@ -87,11 +90,12 @@ function emptyForm(business: Business): FormState {
     tags: [],
     followUpText: "",
     followUpDate: "",
+    followUpAssignee: assigneeId,
     note: "",
   };
 }
 
-function formFromContact(contact: Contact): FormState {
+function formFromContact(contact: Contact, assigneeId = ""): FormState {
   return {
     name: contact.name,
     company: contact.company ?? "",
@@ -113,6 +117,7 @@ function formFromContact(contact: Contact): FormState {
     // A save can attach a new follow-up and note. Existing ones stay as they are.
     followUpText: "",
     followUpDate: "",
+    followUpAssignee: assigneeId,
     note: "",
   };
 }
@@ -261,7 +266,9 @@ export function ContactFormDialog({
   const formErrorId = `${formId}-form-error`;
 
   const tagColors = useTagColors();
-  const [form, setForm] = useState<FormState>(() => emptyForm(defaultBusiness));
+  const { profile } = useProfile();
+  const { profiles } = useProfilesMap();
+  const [form, setForm] = useState<FormState>(() => emptyForm(defaultBusiness, profile?.id ?? ""));
   const [tagDraft, setTagDraft] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
@@ -279,8 +286,11 @@ export function ContactFormDialog({
     setPrevOpen(open);
     setPrevEditingId(editingId);
     if (open) {
+      const assigneeId = profile?.id ?? "";
       setForm(
-        editingContact ? formFromContact(editingContact) : emptyForm(defaultBusiness),
+        editingContact
+          ? formFromContact(editingContact, assigneeId)
+          : emptyForm(defaultBusiness, assigneeId),
       );
       setTagDraft("");
       setNameError(null);
@@ -291,6 +301,13 @@ export function ContactFormDialog({
       setSubmitting(false);
     }
   }
+
+  useEffect(() => {
+    if (!open || !profile?.id) return;
+    setForm((current) =>
+      current.followUpAssignee ? current : { ...current, followUpAssignee: profile.id },
+    );
+  }, [open, profile?.id]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -401,7 +418,11 @@ export function ContactFormDialog({
       followUp:
         form.stage === "closed" || !followUpText
           ? null
-          : { text: followUpText, date: form.followUpDate },
+          : {
+              text: followUpText,
+              date: form.followUpDate,
+              assignedTo: form.followUpAssignee || null,
+            },
     };
 
     try {
@@ -753,7 +774,7 @@ export function ContactFormDialog({
                   Follow-ups for closed leads are paused.
                 </p>
               ) : (
-                <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_11.5rem]">
+                <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_11.5rem_minmax(0,12rem)]">
                   <Field id={`${formId}-follow-up`} label="What needs to happen?">
                     <input
                       id={`${formId}-follow-up`}
@@ -777,11 +798,28 @@ export function ContactFormDialog({
                       className={controlClass}
                     />
                   </Field>
+                  <Field id={`${formId}-follow-up-assignee`} label="Assign to">
+                    <select
+                      id={`${formId}-follow-up-assignee`}
+                      name="follow_up_assignee"
+                      value={form.followUpAssignee}
+                      onChange={(event) => updateField("followUpAssignee", event.target.value)}
+                      className={controlClass}
+                    >
+                      {[...profiles]
+                        .sort((a, b) => profileName(a).localeCompare(profileName(b)))
+                        .map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {profileName(item)}
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
                   {followUpError ? (
                     <p
                       id={followUpErrorId}
                       role="alert"
-                      className="text-sm text-danger md:col-span-2"
+                      className="text-sm text-danger md:col-span-full"
                     >
                       {followUpError}
                     </p>

@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { BusinessPill, TagPill } from "@/components/BusinessSettingsProvider";
+import { BusinessPill, TagPill, useReportBusinessScope } from "@/components/BusinessSettingsProvider";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import {
   CHANNELS,
@@ -27,6 +27,7 @@ import {
 } from "@/lib/constants";
 import {
   addConversation,
+  assignTask,
   completeFollowup,
   deleteContact,
   linkFollowup,
@@ -42,7 +43,9 @@ import {
   invalidateCrm,
 } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
-import type { Heat, HistoryEntry, Stage, Task } from "@/lib/types";
+import type { Heat, HistoryEntry, Profile, Stage, Task } from "@/lib/types";
+import { useProfile } from "@/lib/useProfile";
+import { profileName, useProfilesMap } from "@/lib/useProfilesMap";
 
 type ContactDetailProps = {
   contactId: string;
@@ -158,6 +161,35 @@ function FieldLabel({
   );
 }
 
+function sortedProfiles(profiles: Profile[]) {
+  return [...profiles].sort((a, b) => profileName(a).localeCompare(profileName(b)));
+}
+
+function AssigneeOptions({
+  profiles,
+  currentId,
+}: {
+  profiles: Profile[];
+  currentId?: string | null;
+}) {
+  const options = sortedProfiles(profiles);
+  const missingCurrent =
+    currentId && !options.some((profile) => profile.id === currentId) ? currentId : null;
+
+  return (
+    <>
+      {missingCurrent ? (
+        <option value={missingCurrent}>{profileName(undefined)}</option>
+      ) : null}
+      {options.map((profile) => (
+        <option key={profile.id} value={profile.id}>
+          {profileName(profile)}
+        </option>
+      ))}
+    </>
+  );
+}
+
 function NewChatForm({
   isClosed,
   onSave,
@@ -167,17 +199,25 @@ function NewChatForm({
 }) {
   const formId = useId();
   const notesRef = useRef<HTMLTextAreaElement>(null);
+  const { profile } = useProfile();
+  const { profiles } = useProfilesMap();
   const [date, setDate] = useState("");
   const [channel, setChannel] = useState<string>(CHANNELS[0]);
   const [notes, setNotes] = useState("");
   const [action, setAction] = useState("");
   const [due, setDue] = useState("");
+  const [assignedTo, setAssignedTo] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     setDate((current) => current || localDate());
   }, []);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    setAssignedTo((current) => current || profile.id);
+  }, [profile?.id]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -204,10 +244,12 @@ function NewChatForm({
         channel,
         action: isClosed ? null : followUp,
         due: isClosed ? null : followUpDate,
+        assignedTo: isClosed ? null : assignedTo || null,
       });
       setNotes("");
       setAction("");
       setDue("");
+      setAssignedTo(profile?.id ?? "");
       setDate(localDate());
       setChannel(CHANNELS[0]);
     } catch (caught) {
@@ -276,7 +318,7 @@ function NewChatForm({
                 Follow-ups for closed leads are paused.
               </p>
             ) : (
-              <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_11.5rem]">
+              <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_11.5rem_minmax(0,12rem)]">
                 <div>
                   <FieldLabel htmlFor={`${formId}-action`}>What needs to happen?</FieldLabel>
                   <input
@@ -304,6 +346,18 @@ function NewChatForm({
                     }}
                     className={controlClass}
                   />
+                </div>
+                <div>
+                  <FieldLabel htmlFor={`${formId}-assignee`}>Assign to</FieldLabel>
+                  <select
+                    id={`${formId}-assignee`}
+                    name="assigned_to"
+                    value={assignedTo}
+                    onChange={(event) => setAssignedTo(event.target.value)}
+                    className={controlClass}
+                  >
+                    <AssigneeOptions profiles={profiles} currentId={assignedTo} />
+                  </select>
                 </div>
               </div>
             )}
@@ -404,25 +458,39 @@ function LinkFollowupForm({
 
 function FollowUpCard({
   task,
+  profiles,
+  profilesMap,
   onComplete,
   onReschedule,
+  onReassign,
   onOpenChat,
 }: {
   task: Task;
+  profiles: Profile[];
+  profilesMap: Map<string, Profile>;
   onComplete: () => Promise<void>;
   onReschedule: (date: string) => Promise<void>;
+  onReassign: (assignedTo: string | null) => Promise<void>;
   onOpenChat: (logId: string) => void;
 }) {
   const formId = useId();
   const [date, setDate] = useState(task.date ?? "");
   const [previousDate, setPreviousDate] = useState(task.date);
+  const [assignee, setAssignee] = useState(task.assigned_to ?? "");
+  const [previousAssignee, setPreviousAssignee] = useState(task.assigned_to);
   const [error, setError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
   const [rescheduling, setRescheduling] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
 
   if (task.date !== previousDate) {
     setPreviousDate(task.date);
     setDate(task.date ?? "");
+  }
+
+  if (task.assigned_to !== previousAssignee) {
+    setPreviousAssignee(task.assigned_to);
+    setAssignee(task.assigned_to ?? "");
   }
 
   async function handleComplete() {
@@ -454,9 +522,28 @@ function FollowUpCard({
     }
   }
 
-  const busy = completing || rescheduling;
+  async function handleReassign(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = assignee.trim() || null;
+    if (next === (task.assigned_to ?? null)) return;
+
+    setError(null);
+    setReassigning(true);
+    try {
+      await onReassign(next);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setReassigning(false);
+    }
+  }
+
+  const busy = completing || rescheduling || reassigning;
   const logId = task.log_id;
   const overdue = Boolean(task.date && task.date < localDate());
+  const assigneeLabel = task.assigned_to
+    ? profileName(profilesMap.get(task.assigned_to))
+    : "Unassigned";
 
   return (
     <article className="rounded-2xl border border-line/60 bg-page px-3 py-3">
@@ -464,6 +551,7 @@ function FollowUpCard({
         {dueLabel(task.date)}
       </p>
       <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{task.text || "Follow-up"}</p>
+      <p className="mt-1 text-sm text-muted">{assigneeLabel}</p>
       <div className="mt-3 flex flex-col gap-2 md:flex-row md:flex-wrap">
         <button
           type="button"
@@ -483,24 +571,46 @@ function FollowUpCard({
           </button>
         ) : null}
       </div>
-      <form onSubmit={handleReschedule} className="mt-3 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
-        <div className="w-full min-w-0 md:w-auto">
-          <label htmlFor={`${formId}-date`} className="text-xs font-medium text-muted">
-            Date
-          </label>
-          <input
-            id={`${formId}-date`}
-            name="date"
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            className="input mt-1 w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:w-auto"
-          />
-        </div>
-        <button type="submit" disabled={busy} className={`${secondaryButtonClass} w-full md:w-auto`}>
-          {rescheduling ? "Saving…" : "Change date"}
-        </button>
-      </form>
+      <div className="mt-3 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
+        <form onSubmit={handleReschedule} className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-end">
+          <div className="w-full min-w-0 md:w-auto">
+            <label htmlFor={`${formId}-date`} className="text-xs font-medium text-muted">
+              Date
+            </label>
+            <input
+              id={`${formId}-date`}
+              name="date"
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+              className="input mt-1 w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:w-auto"
+            />
+          </div>
+          <button type="submit" disabled={busy} className={`${secondaryButtonClass} w-full md:w-auto`}>
+            {rescheduling ? "Saving…" : "Change date"}
+          </button>
+        </form>
+        <form onSubmit={handleReassign} className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-end">
+          <div className="w-full min-w-0 md:w-auto">
+            <label htmlFor={`${formId}-assignee`} className="text-xs font-medium text-muted">
+              Assign to
+            </label>
+            <select
+              id={`${formId}-assignee`}
+              name="assigned_to"
+              value={assignee}
+              onChange={(event) => setAssignee(event.target.value)}
+              className="input mt-1 w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none ring-mint/40 focus:border-navy focus:ring-2 md:w-44"
+            >
+              <option value="">Unassigned</option>
+              <AssigneeOptions profiles={profiles} currentId={assignee} />
+            </select>
+          </div>
+          <button type="submit" disabled={busy} className={`${secondaryButtonClass} w-full md:w-auto`}>
+            {reassigning ? "Saving…" : "Reassign"}
+          </button>
+        </form>
+      </div>
       {error ? (
         <p role="alert" className="mt-2 text-sm text-danger">
           {error}
@@ -540,6 +650,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   const openedHash = useRef<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const { profiles, profilesMap, loading: profilesLoading } = useProfilesMap();
 
   const reload = useCallback(async () => {
     await invalidateCrm(queryClient);
@@ -555,6 +666,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   }, [contactId]);
 
   const contact = contactQuery.data;
+  useReportBusinessScope(contact?.business);
   const history = historyQuery.data;
   const tasks = tasksQuery.data;
   const missing = contactQuery.error instanceof Error && contactQuery.error.name === "NotFound";
@@ -737,6 +849,10 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   const stageStyle = stage(stageValue);
   const isClosed = contact.stage === "closed";
   const added = formatTimestamp(contact.created_at);
+  const addedBy =
+    profilesLoading || !contact.owner_id
+      ? "—"
+      : profileName(profilesMap.get(contact.owner_id));
 
   return (
     <>
@@ -813,7 +929,12 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
             </InfoItem>
           </dl>
 
-          {added ? <p className="mt-5 text-sm text-muted">Added {added}</p> : null}
+          <div className="mt-5 flex flex-wrap items-end gap-x-8 gap-y-3">
+            {added ? <p className="text-sm text-muted">Added {added}</p> : null}
+            <dl>
+              <InfoItem label="Added by">{addedBy}</InfoItem>
+            </dl>
+          </div>
 
           <div className="mt-6 border-t border-line pt-5">
             <button
@@ -885,6 +1006,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
                                 entry.id,
                                 text,
                                 date || null,
+                                undefined,
                                 isClosed,
                               );
                               await reload();
@@ -983,6 +1105,8 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
                   <FollowUpCard
                     key={task.id}
                     task={task}
+                    profiles={profiles}
+                    profilesMap={profilesMap}
                     onOpenChat={openLinkedChat}
                     onComplete={async () => {
                       await completeFollowup(
@@ -1003,6 +1127,20 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
                         date || null,
                       );
                       await reload();
+                    }}
+                    onReassign={async (assignedTo) => {
+                      const assigneeLabel = assignedTo
+                        ? profileName(profilesMap.get(assignedTo))
+                        : "Unassigned";
+                      await assignTask(
+                        createClient(),
+                        contact.id,
+                        task.id,
+                        assignedTo,
+                        assigneeLabel,
+                      );
+                      await queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
+                      await queryClient.invalidateQueries({ queryKey: queryKeys.history });
                     }}
                   />
                 ))}

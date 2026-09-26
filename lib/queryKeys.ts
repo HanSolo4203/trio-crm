@@ -1,5 +1,6 @@
 export const queryKeys = {
   contacts: ["contacts"] as const,
+  profiles: ["profiles"] as const,
   tasks: ["tasks"] as const,
   history: ["history"] as const,
   contractors: ["contractors"] as const,
@@ -8,4 +9,8 @@ export const queryKeys = {
   contactTasks: (id: string) => ["tasks", id] as const,
   contractor: (id: string) => ["contractors", id] as const,
   contractorJobs: (id: string) => ["contractor-jobs", id] as const,
+  properties: ["properties"] as const,
+  property: (id: string) => ["properties", id] as const,
+  propertyContacts: (id: string) => ["property-contacts", id] as const,
+  propertyContactRoles: ["property-contact-roles"] as const,
 };

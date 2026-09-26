@@ -69,6 +69,11 @@ export function tagPillStyle(color: string | null | undefined) {
 
 const BusinessSettingsContext = createContext<ContextValue | null>(null);
 
+type BusinessScope = Business | "all";
+
+const BusinessScopeContext = createContext<BusinessScope>("all");
+const SetBusinessScopeContext = createContext<(scope: BusinessScope) => void>(() => {});
+
 function filled(value: string | null | undefined) {
   const trimmed = value?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;
@@ -82,6 +87,24 @@ function tagColorMap(rows: { tag: string; color: string }[] | null) {
     if (tag && color) map[tag] = color;
   }
   return map;
+}
+
+function BusinessScopeProvider({ children }: { children: ReactNode }) {
+  const [scope, setScope] = useState<BusinessScope>("all");
+  return (
+    <SetBusinessScopeContext.Provider value={setScope}>
+      <BusinessScopeContext.Provider value={scope}>{children}</BusinessScopeContext.Provider>
+    </SetBusinessScopeContext.Provider>
+  );
+}
+
+export function useReportBusinessScope(scope: Business | "all" | null | undefined) {
+  const setScope = useContext(SetBusinessScopeContext);
+  const reported: BusinessScope = scope && scope !== "all" ? scope : "all";
+  useEffect(() => {
+    setScope(reported);
+    return () => setScope("all");
+  }, [reported, setScope]);
 }
 
 export function BusinessSettingsProvider({ children }: { children: ReactNode }) {
@@ -111,8 +134,47 @@ export function BusinessSettingsProvider({ children }: { children: ReactNode }) 
 
   return (
     <BusinessSettingsContext.Provider value={{ rows, tagColors, loading, refresh }}>
-      {children}
+      <BusinessScopeProvider>{children}</BusinessScopeProvider>
     </BusinessSettingsContext.Provider>
+  );
+}
+
+function BusinessLogo({ id, featured }: { id: Business; featured: boolean }) {
+  const { name, color, logoUrl } = useBusinessDisplay(id);
+  const frame = featured ? "h-12 w-12" : "h-10 w-10";
+  return (
+    <div className="flex items-center gap-2">
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logoUrl}
+          alt=""
+          className={`${frame} shrink-0 rounded-xl border border-line/60 bg-white object-contain p-1`}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className={`${frame} shrink-0 rounded-xl`}
+          style={{ backgroundColor: color }}
+        />
+      )}
+      <span className={featured ? "text-sm font-semibold text-navy" : "text-sm font-medium text-ink"}>
+        {name}
+      </span>
+    </div>
+  );
+}
+
+export function BusinessLogos() {
+  const scope = useContext(BusinessScopeContext);
+  const ids = scope === "all" ? BUSINESSES.map((item) => item.id) : [scope];
+  const featured = ids.length === 1;
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-3" aria-label="Businesses">
+      {ids.map((id) => (
+        <BusinessLogo key={id} id={id} featured={featured} />
+      ))}
+    </div>
   );
 }
 

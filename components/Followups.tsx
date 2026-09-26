@@ -4,13 +4,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useId, useRef, useState } from "react";
 
-import { BusinessSelectOptions, useBusinessDisplay } from "@/components/BusinessSettingsProvider";
+import { BusinessSelectOptions, useBusinessDisplay, useReportBusinessScope } from "@/components/BusinessSettingsProvider";
 import { formatDate, formatTimestamp, localDate } from "@/lib/constants";
 import { completeFollowup } from "@/lib/crm";
 import { queryKeys } from "@/lib/queryKeys";
 import { fetchContacts, fetchHistory, fetchTasks, invalidateCrm } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
-import type { Business, Contact, HistoryEntry, Task } from "@/lib/types";
+import type { Business, Contact, HistoryEntry, Profile, Task } from "@/lib/types";
+import { useProfile } from "@/lib/useProfile";
+import { profileName, useProfilesMap } from "@/lib/useProfilesMap";
 
 type BusinessFilter = "all" | Business;
 
@@ -122,11 +124,13 @@ function FollowupCard({
   row,
   mode,
   completingId,
+  assigneeName,
   onComplete,
 }: {
   row: FollowupRow;
   mode: "pending" | "completed";
   completingId: string | null;
+  assigneeName: string | null;
   onComplete?: (row: FollowupRow) => void;
 }) {
   const status = followupStatus(row.task.date);
@@ -150,6 +154,7 @@ function FollowupCard({
           <ClientSubline contact={row.contact} />
         </span>
       </Link>
+      {assigneeName ? <p className="mt-0.5 text-sm text-muted">{assigneeName}</p> : null}
       <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{action}</p>
       {chat ? (
         <Link
@@ -182,15 +187,23 @@ function FollowupCard({
   );
 }
 
+function assigneeLabel(row: FollowupRow, profilesMap: Map<string, Profile>) {
+  return profileName(row.task.assigned_to ? profilesMap.get(row.task.assigned_to) : undefined);
+}
+
 function FollowupTable({
   rows,
   mode,
   completingId,
+  profilesMap,
+  showAssignee,
   onComplete,
 }: {
   rows: FollowupRow[];
   mode: "pending" | "completed";
   completingId: string | null;
+  profilesMap: Map<string, Profile>;
+  showAssignee: boolean;
   onComplete?: (row: FollowupRow) => void;
 }) {
   return (
@@ -202,6 +215,7 @@ function FollowupTable({
               row={row}
               mode={mode}
               completingId={completingId}
+              assigneeName={showAssignee ? assigneeLabel(row, profilesMap) : null}
               onComplete={onComplete}
             />
           </li>
@@ -220,6 +234,11 @@ function FollowupTable({
             <th scope="col" className="px-4 py-3 font-medium">
               Client
             </th>
+            {showAssignee ? (
+              <th scope="col" className="px-4 py-3 font-medium">
+                Assignee
+              </th>
+            ) : null}
             <th scope="col" className="px-4 py-3 font-medium">
               Action
             </th>
@@ -245,6 +264,11 @@ function FollowupTable({
                 <td className="px-4 py-4">
                   <ClientCell contact={row.contact} />
                 </td>
+                {showAssignee ? (
+                  <td className="px-4 py-4 text-sm text-muted">
+                    {assigneeLabel(row, profilesMap)}
+                  </td>
+                ) : null}
                 <td className="px-4 py-4">
                   <ActionCell row={row} />
                 </td>
@@ -285,8 +309,16 @@ function FollowupTable({
 
 export function Followups() {
   const filterId = useId();
+  const assigneeFilterId = useId();
   const queryClient = useQueryClient();
+  const { profile, loading: profileLoading } = useProfile();
+  const { profiles, profilesMap } = useProfilesMap();
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string | null>(null);
+  const myId = profile?.id ?? null;
+  const assigneeValue = assigneeFilter ?? myId ?? "all";
+  const showAssignee = assigneeValue === "all" || (myId != null && assigneeValue !== myId);
+  useReportBusinessScope(businessFilter);
   const [actionError, setActionError] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const completingRef = useRef(false);
@@ -300,7 +332,11 @@ export function Followups() {
   const loaded = Boolean(tasksQuery.data && contactsQuery.data && historyQuery.data);
   const loadErrorSource = tasksQuery.error ?? contactsQuery.error ?? historyQuery.error;
   const loadError = loadErrorSource ? errorMessage(loadErrorSource) : null;
-  const loading = !loaded && !loadError && (tasksQuery.isPending || contactsQuery.isPending || historyQuery.isPending);
+  const waitingForAssignee = assigneeFilter == null && profileLoading;
+  const loading =
+    !loadError &&
+    (waitingForAssignee ||
+      (!loaded && (tasksQuery.isPending || contactsQuery.isPending || historyQuery.isPending)));
 
   function retry() {
     void tasksQuery.refetch();
@@ -337,6 +373,7 @@ export function Followups() {
     const contact = contactsById.get(task.contact_id);
     if (!contact) return [];
     if (businessFilter !== "all" && contact.business !== businessFilter) return [];
+    if (assigneeValue !== "all" && task.assigned_to !== assigneeValue) return [];
     const linked = task.log_id ? historyById.get(task.log_id) ?? null : null;
     return [{ task, contact, chat: linked }];
   });
@@ -351,19 +388,42 @@ export function Followups() {
           <p className="text-sm font-medium text-blue">Trio CRM</p>
           <h1 className="mt-2 text-3xl font-semibold text-navy">Follow-ups</h1>
         </div>
-        <div className="w-full md:w-auto">
-          <label htmlFor={filterId} className="text-sm font-medium text-ink">
-            Business
-          </label>
-          <select
-            id={filterId}
-            value={businessFilter}
-            onChange={(event) => setBusinessFilter(event.target.value as BusinessFilter)}
-            className={controlClass}
-          >
-            <option value="all">All businesses</option>
-            <BusinessSelectOptions />
-          </select>
+        <div className="flex w-full flex-col gap-4 sm:flex-row md:w-auto">
+          <div className="min-w-0">
+            <label htmlFor={filterId} className="text-sm font-medium text-ink">
+              Business
+            </label>
+            <select
+              id={filterId}
+              value={businessFilter}
+              onChange={(event) => setBusinessFilter(event.target.value as BusinessFilter)}
+              className={controlClass}
+            >
+              <option value="all">All businesses</option>
+              <BusinessSelectOptions />
+            </select>
+          </div>
+          <div className="min-w-0">
+            <label htmlFor={assigneeFilterId} className="text-sm font-medium text-ink">
+              Assignee
+            </label>
+            <select
+              id={assigneeFilterId}
+              value={assigneeValue}
+              onChange={(event) => setAssigneeFilter(event.target.value)}
+              className={controlClass}
+            >
+              {myId ? <option value={myId}>Assigned to me</option> : null}
+              <option value="all">All</option>
+              {[...profiles]
+                .sort((a, b) => profileName(a).localeCompare(profileName(b)))
+                .map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {profileName(member)}
+                  </option>
+                ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -418,6 +478,8 @@ export function Followups() {
                 rows={pending}
                 mode="pending"
                 completingId={completingId}
+                profilesMap={profilesMap}
+                showAssignee={showAssignee}
                 onComplete={(row) => {
                   void handleComplete(row);
                 }}
@@ -435,7 +497,13 @@ export function Followups() {
               </p>
             ) : (
               <div className="border-t border-line p-3 md:p-0">
-                <FollowupTable rows={completed} mode="completed" completingId={null} />
+                <FollowupTable
+                  rows={completed}
+                  mode="completed"
+                  completingId={null}
+                  profilesMap={profilesMap}
+                  showAssignee={showAssignee}
+                />
               </div>
             )}
           </details>

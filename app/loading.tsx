@@ -6,6 +6,7 @@ import {
   ContactSkeleton,
   ContractorSkeleton,
   ContractorsSkeleton,
+  PropertiesSkeleton,
   ContactsSkeleton,
   DashboardSkeleton,
   FollowupsSkeleton,
@@ -22,6 +23,7 @@ export default function Loading() {
   if (pathname.startsWith("/pipeline")) return <PipelineSkeleton />;
   if (pathname.startsWith("/contacts/")) return <ContactSkeleton />;
   if (/^\/contractors\/.+/.test(pathname)) return <ContractorSkeleton />;
+  if (pathname.startsWith("/properties")) return <PropertiesSkeleton />;
   if (pathname.startsWith("/contractors")) return <ContractorsSkeleton />;
   if (pathname.startsWith("/settings")) return <SettingsSkeleton />;
   if (pathname.startsWith("/login")) return <LoginSkeleton />;

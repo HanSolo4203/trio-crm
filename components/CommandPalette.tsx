@@ -7,8 +7,8 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { BusinessMark, useBusinessDisplay } from "@/components/BusinessSettingsProvider";
 import { queryKeys } from "@/lib/queryKeys";
-import { fetchContacts, fetchContractors } from "@/lib/queries";
-import type { Business, Contact, Contractor } from "@/lib/types";
+import { fetchContacts, fetchContractors, fetchProperties } from "@/lib/queries";
+import type { Business, Contact, Contractor, Property } from "@/lib/types";
 
 type SearchContact = Pick<
   Contact,
@@ -17,9 +17,12 @@ type SearchContact = Pick<
 
 type SearchContractor = Pick<Contractor, "id" | "name" | "trade" | "company" | "phone">;
 
+type SearchProperty = Pick<Property, "id" | "name" | "address" | "business">;
+
 type SearchResult =
   | { kind: "contact"; item: SearchContact }
-  | { kind: "contractor"; item: SearchContractor };
+  | { kind: "contractor"; item: SearchContractor }
+  | { kind: "property"; item: SearchProperty };
 
 const RESULT_LIMIT = 8;
 
@@ -58,10 +61,15 @@ function contractorLine(contractor: SearchContractor) {
   return [contractor.company?.trim(), contractor.phone?.trim()].filter(Boolean).join(" · ");
 }
 
+function matchesProperty(property: SearchProperty, needle: string) {
+  const fields = [property.name, property.address];
+  return fields.some((field) => field?.toLowerCase().includes(needle));
+}
+
 function resultHref(result: SearchResult) {
-  return result.kind === "contact"
-    ? `/contacts/${result.item.id}`
-    : `/contractors/${result.item.id}`;
+  if (result.kind === "contact") return `/contacts/${result.item.id}`;
+  if (result.kind === "contractor") return `/contractors/${result.item.id}`;
+  return `/properties/${result.item.id}`;
 }
 
 export function CommandPalette({
@@ -88,10 +96,17 @@ export function CommandPalette({
     queryFn: fetchContractors,
     enabled: open,
   });
+  const propertiesQuery = useQuery({
+    queryKey: queryKeys.properties,
+    queryFn: fetchProperties,
+    enabled: open,
+  });
   const contacts = contactsQuery.data ?? [];
   const contractors = contractorsQuery.data ?? [];
-  const loading = contactsQuery.isPending || contractorsQuery.isPending;
-  const errorSource = contactsQuery.error ?? contractorsQuery.error;
+  const properties = propertiesQuery.data ?? [];
+  const loading =
+    contactsQuery.isPending || contractorsQuery.isPending || propertiesQuery.isPending;
+  const errorSource = contactsQuery.error ?? contractorsQuery.error ?? propertiesQuery.error;
   const error = errorSource
     ? errorSource instanceof Error
       ? errorSource.message
@@ -114,9 +129,17 @@ export function CommandPalette({
           .filter((contractor) => matchesContractor(contractor, needle))
           .sort((a, b) => a.name.localeCompare(b.name))
           .slice(0, RESULT_LIMIT);
+  const propertyMatches =
+    needle === ""
+      ? []
+      : properties
+          .filter((property) => matchesProperty(property, needle))
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .slice(0, RESULT_LIMIT);
   const results: SearchResult[] = [
     ...contactMatches.map((item) => ({ kind: "contact" as const, item })),
     ...contractorMatches.map((item) => ({ kind: "contractor" as const, item })),
+    ...propertyMatches.map((item) => ({ kind: "property" as const, item })),
   ];
   const activeIndex = results.length === 0 ? 0 : Math.min(selected, results.length - 1);
   const active = results[activeIndex];
@@ -208,7 +231,7 @@ export function CommandPalette({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Search contacts and contractors"
+        aria-label="Search contacts, contractors, and properties"
         onMouseDown={(event) => event.stopPropagation()}
         className="flex max-h-[min(32rem,calc(100dvh-6rem))] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-line bg-white text-ink shadow-[0_20px_25px_-5px_rgb(0_0_0/0.1),0_8px_10px_-6px_rgb(0_0_0/0.1)]"
       >
@@ -229,7 +252,7 @@ export function CommandPalette({
                 setQuery(event.target.value);
                 setSelected(0);
               }}
-              placeholder="Search contacts and contractors"
+              placeholder="Search contacts, contractors, and properties"
               className="w-full bg-transparent py-1 text-ink outline-none placeholder:text-muted/70"
             />
           </div>
@@ -304,6 +327,47 @@ export function CommandPalette({
                             </div>
                             <p className="mt-0.5 truncate text-sm text-muted">
                               {place || "No company or phone"}
+                            </p>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+              {propertyMatches.length > 0 ? (
+                <div
+                  role="group"
+                  aria-label="Properties"
+                  className={
+                    contactMatches.length > 0 || contractorMatches.length > 0
+                      ? "mt-1 border-t border-line"
+                      : undefined
+                  }
+                >
+                  <p className="px-4 pb-1 pt-3 text-xs font-medium text-muted">Properties</p>
+                  <ul>
+                    {propertyMatches.map((property, index) => {
+                      const resultIndex = contactMatches.length + contractorMatches.length + index;
+                      const highlighted = resultIndex === activeIndex;
+                      const address = property.address?.trim() ?? "";
+                      return (
+                        <li key={property.id} role="presentation">
+                          <button
+                            id={`${listId}-option-property-${property.id}`}
+                            type="button"
+                            role="option"
+                            aria-selected={highlighted}
+                            onMouseEnter={() => setSelected(resultIndex)}
+                            onClick={() => openResult({ kind: "property", item: property })}
+                            className={`block w-full px-4 py-3 text-left ${highlighted ? "bg-page" : "hover:bg-page"}`}
+                          >
+                            <div className="flex min-w-0 items-center justify-between gap-3">
+                              <p className="truncate font-semibold text-navy">{property.name}</p>
+                              {property.business ? <SearchBusiness id={property.business} /> : null}
+                            </div>
+                            <p className="mt-0.5 truncate text-sm text-muted">
+                              {address || "No address"}
                             </p>
                           </button>
                         </li>

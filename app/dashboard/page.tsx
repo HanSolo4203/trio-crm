@@ -17,11 +17,12 @@ import {
 } from "recharts";
 
 import { AppShell } from "@/components/AppShell";
-import { BusinessSelectOptions, useBusinessDisplay } from "@/components/BusinessSettingsProvider";
+import { BusinessSelectOptions, useBusinessDisplay, useReportBusinessScope } from "@/components/BusinessSettingsProvider";
 import { BUSINESSES, formatRand, HEATS, isOpenStage, localDate, stage } from "@/lib/constants";
 import { queryKeys } from "@/lib/queryKeys";
 import { fetchContacts, fetchHistory, fetchTasks } from "@/lib/queries";
 import type { Business, Contact, Stage, Task } from "@/lib/types";
+import { useProfile } from "@/lib/useProfile";
 
 type BusinessFilter = "all" | Business;
 
@@ -163,18 +164,30 @@ function StatTile({
   label,
   value,
   valueClassName,
+  href,
 }: {
-  label: string;
+  label: ReactNode;
   value: string;
   valueClassName?: string;
+  href?: string;
 }) {
-  return (
-    <div className="min-w-0 rounded-2xl border border-line/60 bg-white px-4 py-3 shadow-card">
+  const className = "min-w-0 rounded-2xl border border-line/60 bg-white px-4 py-3 shadow-card";
+  const body = (
+    <>
       <p className="text-sm text-muted">{label}</p>
       <p className={`mt-1 text-3xl font-semibold tabular-nums leading-none ${valueClassName ?? ""}`}>
         {value}
       </p>
-    </div>
+    </>
+  );
+  if (!href) return <div className={className}>{body}</div>;
+  return (
+    <Link
+      href={href}
+      className={`${className} transition-colors hover:border-navy/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy`}
+    >
+      {body}
+    </Link>
   );
 }
 
@@ -336,8 +349,10 @@ function ReferralCommissions({ contacts }: { contacts: Contact[] }) {
 function Dashboard() {
   const filterId = useId();
   const phone = usePhone();
+  const { profile, loading: profileLoading } = useProfile();
   const axisTick = { fill: "#56677f", fontSize: phone ? 10 : 12 };
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
+  useReportBusinessScope(businessFilter);
   const contactsQuery = useQuery({ queryKey: queryKeys.contacts, queryFn: fetchContacts });
   const tasksQuery = useQuery({ queryKey: queryKeys.tasks, queryFn: fetchTasks });
   const historyQuery = useQuery({ queryKey: queryKeys.history, queryFn: fetchHistory });
@@ -373,6 +388,13 @@ function Dashboard() {
     return day !== "" && day < today;
   }).length;
   const dueToday = pendingTasks.filter((task) => taskDay(task) === today).length;
+  const myFollowUps = profile
+    ? pendingTasks.filter((task) => {
+        if (task.assigned_to !== profile.id) return false;
+        const day = taskDay(task);
+        return day !== "" && day <= today;
+      }).length
+    : null;
 
   const funnel: BarDatum[] = [
     ...FUNNEL_STAGES.map((id) => {
@@ -453,13 +475,17 @@ function Dashboard() {
             <p className="mt-8 text-sm text-muted">Loading dashboard…</p>
           ) : (
             <>
-              <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+              <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
                 <StatTile label="Total contacts" value={String(totalContacts)} />
                 <StatTile label="Open leads" value={String(openLeads)} />
                 <StatTile label="Clients won" value={String(clientsWon)} />
                 <StatTile label="Win rate" value={formatWinRate(clientsWon, closedLost)} />
                 <StatTile
-                  label="Overdue follow-ups"
+                  label={
+                    <>
+                      Overdue <span className="whitespace-nowrap">follow-ups</span>
+                    </>
+                  }
                   value={String(overdue)}
                   valueClassName="text-danger"
                 />
@@ -467,6 +493,16 @@ function Dashboard() {
                   label="Due today"
                   value={String(dueToday)}
                   valueClassName="text-[#975414]"
+                />
+                <StatTile
+                  label={
+                    <>
+                      My <span className="whitespace-nowrap">follow-ups</span>
+                    </>
+                  }
+                  value={profileLoading || myFollowUps == null ? "—" : String(myFollowUps)}
+                  valueClassName={myFollowUps ? "text-navy" : undefined}
+                  href="/followups"
                 />
               </div>
 

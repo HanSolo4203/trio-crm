@@ -25,6 +25,7 @@ export type ContactDraft = {
 export type FollowUpDraft = {
   text: string;
   date?: string | null;
+  assignedTo?: string | null;
 };
 
 export type ContactExtras = {
@@ -38,6 +39,7 @@ export type ConversationInput = {
   channel?: string | null;
   action?: string | null;
   due?: string | null;
+  assignedTo?: string | null;
 };
 
 const NULLABLE_CONTACT_FIELDS = new Set<keyof ContactDraft>([
@@ -151,6 +153,7 @@ async function insertTask(
     text: string;
     date?: string | null;
     log_id?: string | null;
+    assigned_to?: string | null;
   },
 ) {
   const { data, error } = await supabase
@@ -160,6 +163,7 @@ async function insertTask(
       text: row.text,
       date: blankToNull(row.date),
       log_id: row.log_id ?? null,
+      ...(row.assigned_to !== undefined ? { assigned_to: row.assigned_to } : {}),
     })
     .select("id")
     .single();
@@ -193,6 +197,7 @@ async function maybeAddFollowUp(
     contact_id: contactId,
     text,
     date: followUp?.date,
+    assigned_to: followUp?.assignedTo,
   });
 }
 
@@ -322,6 +327,7 @@ export async function addConversation(
       text: action,
       date: due,
       log_id: logId,
+      assigned_to: input.assignedTo,
     });
   }
 
@@ -334,6 +340,7 @@ export async function linkFollowup(
   logId: string,
   text: string,
   date: string | null,
+  assignedTo: string | null | undefined,
   isClosed: boolean,
 ) {
   const action = text.trim();
@@ -351,6 +358,7 @@ export async function linkFollowup(
     text: action,
     date: due,
     log_id: logId,
+    assigned_to: assignedTo,
   });
   await syncNext(supabase, contactId);
 }
@@ -401,6 +409,26 @@ export async function rescheduleTask(
     text: `Follow-up rescheduled from ${from} to ${to}.`,
   });
   await syncNext(supabase, contactId);
+}
+
+export async function assignTask(
+  supabase: SupabaseClient,
+  contactId: string,
+  taskId: string,
+  assignedTo: string | null,
+  assigneeLabel: string,
+) {
+  const { error } = await supabase
+    .from("crm_tasks")
+    .update({ assigned_to: assignedTo })
+    .eq("id", taskId)
+    .eq("contact_id", contactId);
+  raise(error);
+  await insertHistory(supabase, {
+    contact_id: contactId,
+    type: "activity",
+    text: `Follow-up reassigned to ${assigneeLabel}.`,
+  });
 }
 
 export async function setLeadPosition(

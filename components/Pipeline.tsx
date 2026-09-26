@@ -6,6 +6,7 @@ import { useId, useRef, useState, type ReactNode } from "react";
 
 import {
   BusinessPill,
+  useReportBusinessScope,
   BusinessSelectOptions,
   StatusDot,
   StatusPill,
@@ -159,6 +160,7 @@ function LeadCard({ contact }: { contact: Contact }) {
 export function Pipeline() {
   const filterId = useId();
   const [businessFilter, setBusinessFilter] = useState<BusinessFilter>("all");
+  useReportBusinessScope(businessFilter);
   const contactsQuery = useQuery({
     queryKey: queryKeys.contacts,
     queryFn: fetchContacts,

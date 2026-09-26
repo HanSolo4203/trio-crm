@@ -1,9 +1,14 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import { listContractors, listJobs } from "@/lib/contractors";
+import {
+  listAllPropertyContactRoles,
+  listProperties,
+  listPropertyContacts,
+} from "@/lib/properties";
 import { queryKeys } from "@/lib/queryKeys";
 import { createClient } from "@/lib/supabase/client";
-import type { Contact, Contractor, HistoryEntry, Task } from "@/lib/types";
+import type { Contact, Contractor, HistoryEntry, Profile, Property, Task } from "@/lib/types";
 
 function raise(error: { message: string } | null) {
   if (error) throw new Error(error.message);
@@ -28,6 +33,13 @@ export async function fetchHistory() {
   const { data, error } = await supabase.from("crm_history").select("*");
   raise(error);
   return (data ?? []) as HistoryEntry[];
+}
+
+export async function fetchProfiles() {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("crm_profiles").select("*");
+  raise(error);
+  return (data ?? []) as Profile[];
 }
 
 export async function fetchContact(id: string) {
@@ -99,5 +111,41 @@ export function invalidateContractors(queryClient: QueryClient) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.contractors }),
     queryClient.invalidateQueries({ queryKey: ["contractor-jobs"] }),
+  ]);
+}
+
+export async function fetchProperties() {
+  return listProperties(createClient());
+}
+
+export async function fetchProperty(id: string) {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("crm_properties")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  raise(error);
+  if (!data) {
+    const missing = new Error("This property could not be found.");
+    missing.name = "NotFound";
+    throw missing;
+  }
+  return data as Property;
+}
+
+export async function fetchPropertyContacts(id: string) {
+  return listPropertyContacts(createClient(), id);
+}
+
+export async function fetchPropertyContactRoles() {
+  return listAllPropertyContactRoles(createClient());
+}
+
+export function invalidateProperties(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.properties }),
+    queryClient.invalidateQueries({ queryKey: ["property-contacts"] }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.propertyContactRoles }),
   ]);
 }

@@ -61,8 +61,8 @@ export function DashboardSkeleton() {
         titleWidth="w-44"
         controls={<div className="h-10 w-full animate-pulse rounded-lg bg-gray-200 md:w-52" />}
       />
-      <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }, (_, index) => (
+      <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
+        {Array.from({ length: 7 }, (_, index) => (
           <div key={index} className="h-20 animate-pulse rounded-2xl border border-gray-200 bg-gray-100" />
         ))}
       </div>
@@ -160,6 +160,22 @@ export function ContactSkeleton() {
           <div className="h-40 animate-pulse rounded-2xl bg-gray-200" />
         </div>
       </div>
+    </Frame>
+  );
+}
+
+export function PropertiesSkeleton() {
+  return (
+    <Frame label="Loading properties">
+      <PageHeading
+        titleWidth="w-40"
+        controls={<div className="h-10 w-full animate-pulse rounded-lg bg-gray-200 md:w-36" />}
+      />
+      <ul className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 6 }, (_, index) => (
+          <li key={index} className="h-32 animate-pulse rounded-xl bg-gray-200" />
+        ))}
+      </ul>
     </Frame>
   );
 }

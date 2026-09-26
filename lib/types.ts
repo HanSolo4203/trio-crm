@@ -31,7 +31,7 @@ export interface AdminUser {
 
 export interface Contact {
   id: string;
-  owner_id: string;
+  owner_id: string | null;
   business: Business;
   name: string;
   company: string | null;
@@ -71,6 +71,7 @@ export interface Task {
   date: string | null;
   log_id: string | null;
   done_at: string | null;
+  assigned_to: string | null;
 }
 
 export type ContractorStatus = "active" | "inactive";
@@ -102,4 +103,30 @@ export interface ContractorJob {
   reason: string | null;
   cost: number | null;
   created_at: string;
+}
+
+export interface Property {
+  id: string;
+  owner_id: string | null;
+  name: string;
+  business: Business | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PropertyContact {
+  id: string;
+  property_id: string;
+  owner_id: string | null;
+  role: string;
+  contact_name: string | null;
+  company: string | null;
+  phone: string | null;
+  alt_phone: string | null;
+  email: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
 }

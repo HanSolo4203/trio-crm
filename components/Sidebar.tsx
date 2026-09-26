@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Building2,
   CalendarClock,
   GitBranch,
   LayoutDashboard,
@@ -32,6 +33,7 @@ const NAV: readonly {
   { href: "/", label: "Contacts", icon: Users },
   { href: "/followups", label: "Follow-ups", icon: CalendarClock },
   { href: "/pipeline", label: "Leads", icon: GitBranch },
+  { href: "/properties", label: "Properties", icon: Building2 },
   { href: "/contractors", label: "Contractors", icon: Wrench },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -56,7 +58,8 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
     tasks == null
       ? null
       : tasks.filter((task) => {
-          if (task.done_at != null) return false;
+          if (task.assigned_to !== profile?.id) return false;
+        if (task.done_at != null) return false;
           const date = task.date?.trim() ?? "";
           return date !== "" && date <= today;
         }).length;
